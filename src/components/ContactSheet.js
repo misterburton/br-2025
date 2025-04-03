@@ -198,23 +198,20 @@ export class ContactSheet {
         const imagePos = this.layout.getImagePosition(gridY, gridX);
         const zoomScale = this.calculateZoomScale();
         
-        // Quick initial zoom with Quad.easeIn
+        // Scale up
         gsap.to(this.sheet.scale, {
             x: zoomScale,
             y: zoomScale,
-            z: 1,
             duration: 0.75,
             ease: "power2.in"
         });
         
-        // Graceful arc to position with Quint.easeInOut
+        // Move to position
         gsap.to(this.sheet.position, {
             x: imagePos.x * -zoomScale,
             y: imagePos.y * -zoomScale,
-            z: 0.5,
             duration: 1.5,
             ease: "power4.inOut",
-            overwrite: false,
             onComplete: () => {
                 this.isTransitioning = false;
                 this.isZoomedIn = true;
@@ -226,11 +223,10 @@ export class ContactSheet {
         if (this.isTransitioning) return;
         this.isTransitioning = true;
         
-        // Scale down with Cubic.easeInOut
+        // Scale down
         gsap.to(this.sheet.scale, {
             x: 1,
             y: 1,
-            z: 1,
             duration: 0.85,
             ease: "power3.inOut",
             delay: 0.25,
@@ -240,14 +236,12 @@ export class ContactSheet {
             }
         });
         
-        // Quick return to center with Cubic.easeIn
+        // Return to center
         gsap.to(this.sheet.position, {
             x: 0,
             y: 0,
-            z: -0.1,
-            duration: 0.57, // 2/3 of 0.85
-            ease: "power3.in",
-            overwrite: false
+            duration: 0.57,
+            ease: "power3.in"
         });
     }
     
@@ -344,7 +338,7 @@ export class ContactSheet {
         const imagePos = this.layout.getImagePosition(gridY, gridX);
         const zoomScale = this.calculateZoomScale();
         
-        // Slide to new position with a smooth ease
+        // Slide to new position
         gsap.to(this.sheet.position, {
             x: imagePos.x * -zoomScale,
             y: imagePos.y * -zoomScale,
