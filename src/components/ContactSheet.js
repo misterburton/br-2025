@@ -145,31 +145,28 @@ export class ContactSheet {
     isOverImage(uv) {
         if (!uv) return false;
         
+        // Convert UV to grid position
+        const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
+        const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
+        
+        // Check if we're within valid grid bounds
+        if (gridX < 0 || gridX >= this.layout.columns || gridY < 0 || gridY >= this.layout.rows) {
+            return false;
+        }
+        
+        // Get the exact position of this image in the grid
+        const imageX = this.layout.firstImageX + (gridX * (this.layout.imageWidth + this.layout.horizontalMargin));
+        const imageY = this.layout.firstImageY + (gridY * (this.layout.imageHeight + this.layout.verticalMargin));
+        
         // Convert UV to sheet coordinates
         const pixelX = uv.x * this.layout.sheetWidth;
         const pixelY = (1 - uv.y) * this.layout.sheetHeight;
         
-        // Get grid position using exact same math as grid creation
-        const gridX = Math.floor((pixelX - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
-        const gridY = Math.floor((pixelY - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
-        
-        // Get exact image position using same math as grid creation
-        const imageX = this.layout.firstImageX + (gridX * (this.layout.imageWidth + this.layout.horizontalMargin));
-        const imageY = this.layout.firstImageY + (gridY * (this.layout.imageHeight + this.layout.verticalMargin));
-        
-        // Simple hit test against exact image bounds
-        const isHit = 
-            pixelX >= imageX && 
-            pixelX <= imageX + this.layout.imageWidth &&
-            pixelY >= imageY && 
-            pixelY <= imageY + this.layout.imageHeight;
-        
-        // When zoomed in, only respond to current image
-        if (this.isZoomedIn) {
-            return isHit && gridX === this.currentGridX && gridY === this.currentGridY;
-        }
-        
-        return isHit && gridX >= 0 && gridX < this.layout.columns && gridY >= 0 && gridY < this.layout.rows;
+        // Simple hit test against image bounds
+        return pixelX >= imageX && 
+               pixelX <= imageX + this.layout.imageWidth &&
+               pixelY >= imageY && 
+               pixelY <= imageY + this.layout.imageHeight;
     }
     
     calculateZoomScale() {
@@ -296,11 +293,11 @@ export class ContactSheet {
             if (intersects.length > 0 && this.isOverImage(intersects[0].uv)) {
                 const intersect = intersects[0];
                 const uv = intersect.uv;
-                const gridX = Math.floor(uv.x * this.layout.columns);
-                const gridY = Math.floor((1 - uv.y) * this.layout.rows);
+                const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
+                const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
                 
                 if (this.isZoomedIn) {
-                    // Start long press timer only if on the current image
+                    // If clicking current image, start long press timer
                     if (gridX === this.currentGridX && gridY === this.currentGridY) {
                         this.isLongPressing = true;
                         this.longPressTimer = setTimeout(() => {
@@ -308,9 +305,11 @@ export class ContactSheet {
                                 this.zoomOut();
                             }
                         }, this.longPressDuration);
+                    } else if (!this.isTransitioning) {
+                        // If clicking adjacent image, slide to it
+                        this.slideToImage(gridX, gridY);
                     }
                 } else {
-                    // Store the clicked image coordinates
                     this.currentGridX = gridX;
                     this.currentGridY = gridY;
                     this.zoomToImage(gridX, gridY);
@@ -333,6 +332,28 @@ export class ContactSheet {
             if (this.longPressTimer) {
                 clearTimeout(this.longPressTimer);
                 this.longPressTimer = null;
+            }
+        });
+    }
+    
+    slideToImage(gridX, gridY) {
+        if (this.isTransitioning) return;
+        this.isTransitioning = true;
+        
+        // Get position for the target image
+        const imagePos = this.layout.getImagePosition(gridY, gridX);
+        const zoomScale = this.calculateZoomScale();
+        
+        // Slide to new position with a smooth ease
+        gsap.to(this.sheet.position, {
+            x: imagePos.x * -zoomScale,
+            y: imagePos.y * -zoomScale,
+            duration: 0.6,
+            ease: "power2.out",
+            onComplete: () => {
+                this.currentGridX = gridX;
+                this.currentGridY = gridY;
+                this.isTransitioning = false;
             }
         });
     }
