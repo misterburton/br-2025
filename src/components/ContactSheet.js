@@ -11,6 +11,13 @@ export class ContactSheet {
         this.currentIndex = 0;
         this.isTransitioning = false;
         this.isZoomedIn = false;
+        this.currentGridX = -1;
+        this.currentGridY = -1;
+        
+        // Long press handling
+        this.longPressTimer = null;
+        this.longPressDuration = 500; // 500ms for long press
+        this.isLongPressing = false;
         
         // Raycaster for pointer intersection
         this.raycaster = new THREE.Raycaster();
@@ -138,48 +145,31 @@ export class ContactSheet {
     isOverImage(uv) {
         if (!uv) return false;
         
-        // Convert UV to grid coordinates
-        const gridX = Math.floor(uv.x * this.layout.columns);
-        const gridY = Math.floor((1 - uv.y) * this.layout.rows);
+        // Convert UV to sheet coordinates
+        const pixelX = uv.x * this.layout.sheetWidth;
+        const pixelY = (1 - uv.y) * this.layout.sheetHeight;
         
-        // Calculate UV space for a single image including margins
-        const totalWidth = this.layout.sheetWidth;
-        const totalHeight = this.layout.sheetHeight;
-        const imageWidth = this.layout.imageWidth;
-        const imageHeight = this.layout.imageHeight;
-        const marginX = this.layout.horizontalMargin;
-        const marginY = this.layout.verticalMargin;
+        // Get grid position using exact same math as grid creation
+        const gridX = Math.floor((pixelX - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
+        const gridY = Math.floor((pixelY - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
         
-        // Calculate normalized margins
-        const normalizedMarginX = marginX / totalWidth;
-        const normalizedMarginY = marginY / totalHeight;
+        // Get exact image position using same math as grid creation
+        const imageX = this.layout.firstImageX + (gridX * (this.layout.imageWidth + this.layout.horizontalMargin));
+        const imageY = this.layout.firstImageY + (gridY * (this.layout.imageHeight + this.layout.verticalMargin));
         
-        // Calculate local UV within the grid cell
-        const localU = (uv.x * this.layout.columns) % 1;
-        const localV = ((1 - uv.y) * this.layout.rows) % 1;
+        // Simple hit test against exact image bounds
+        const isHit = 
+            pixelX >= imageX && 
+            pixelX <= imageX + this.layout.imageWidth &&
+            pixelY >= imageY && 
+            pixelY <= imageY + this.layout.imageHeight;
         
-        // Calculate image bounds within cell, accounting for edge positions
-        const cellWidth = 1 / this.layout.columns;
-        const cellHeight = 1 / this.layout.rows;
+        // When zoomed in, only respond to current image
+        if (this.isZoomedIn) {
+            return isHit && gridX === this.currentGridX && gridY === this.currentGridY;
+        }
         
-        // Adjust margins based on position in grid
-        const isLeftEdge = gridX === 0;
-        const isRightEdge = gridX === this.layout.columns - 1;
-        const isTopEdge = gridY === 0;
-        const isBottomEdge = gridY === this.layout.rows - 1;
-        
-        // Calculate start/end positions with edge-aware margins
-        const imageStartX = isLeftEdge ? normalizedMarginX / cellWidth : (marginX / 2) / (totalWidth * cellWidth);
-        const imageEndX = isRightEdge ? 1 - (normalizedMarginX / cellWidth) : 1 - (marginX / 2) / (totalWidth * cellWidth);
-        const imageStartY = isTopEdge ? normalizedMarginY / cellHeight : (marginY / 2) / (totalHeight * cellHeight);
-        const imageEndY = isBottomEdge ? 1 - (normalizedMarginY / cellHeight) : 1 - (marginY / 2) / (totalHeight * cellHeight);
-        
-        return (
-            gridX >= 0 && gridX < this.layout.columns &&
-            gridY >= 0 && gridY < this.layout.rows &&
-            localU >= imageStartX && localU <= imageEndX &&
-            localV >= imageStartY && localV <= imageEndY
-        );
+        return isHit && gridX >= 0 && gridX < this.layout.columns && gridY >= 0 && gridY < this.layout.rows;
     }
     
     calculateZoomScale() {
@@ -202,6 +192,10 @@ export class ContactSheet {
     zoomToImage(gridX, gridY) {
         if (this.isTransitioning) return;
         this.isTransitioning = true;
+        
+        // Store the current image coordinates
+        this.currentGridX = gridX;
+        this.currentGridY = gridY;
         
         // Get position for the target image
         const imagePos = this.layout.getImagePosition(gridY, gridX);
@@ -296,26 +290,39 @@ export class ContactSheet {
                 const gridY = Math.floor((1 - uv.y) * this.layout.rows);
                 
                 if (this.isZoomedIn) {
-                    this.zoomOut();
+                    // Start long press timer only if on the current image
+                    if (gridX === this.currentGridX && gridY === this.currentGridY) {
+                        this.isLongPressing = true;
+                        this.longPressTimer = setTimeout(() => {
+                            if (this.isLongPressing) {
+                                this.zoomOut();
+                            }
+                        }, this.longPressDuration);
+                    }
                 } else {
+                    // Store the clicked image coordinates
+                    this.currentGridX = gridX;
+                    this.currentGridY = gridY;
                     this.zoomToImage(gridX, gridY);
                 }
-                
-                console.log('Image clicked/tapped at:', {
-                    point: {
-                        x: intersect.point.x.toFixed(4),
-                        y: intersect.point.y.toFixed(4),
-                        z: intersect.point.z.toFixed(4)
-                    },
-                    uv: {
-                        u: uv.x.toFixed(4),
-                        v: uv.y.toFixed(4)
-                    },
-                    grid: {
-                        x: gridX,
-                        y: gridY
-                    }
-                });
+            }
+        });
+        
+        // Pointer up event
+        canvas.addEventListener('pointerup', () => {
+            this.isLongPressing = false;
+            if (this.longPressTimer) {
+                clearTimeout(this.longPressTimer);
+                this.longPressTimer = null;
+            }
+        });
+        
+        // Pointer leave event
+        canvas.addEventListener('pointerleave', () => {
+            this.isLongPressing = false;
+            if (this.longPressTimer) {
+                clearTimeout(this.longPressTimer);
+                this.longPressTimer = null;
             }
         });
     }
