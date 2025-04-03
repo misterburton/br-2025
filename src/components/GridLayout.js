@@ -26,9 +26,18 @@ export class GridLayout {
     }
     
     calculateScale() {
-        // Scale everything down so the sheet height is 3.5 units in the scene
-        // This will fill most of our 4-unit frustum while leaving some margin
-        this.scale = 3.5 / this.sheetHeight;
+        // Calculate aspect ratios
+        const sheetAspect = this.sheetWidth / this.sheetHeight;
+        const viewportAspect = window.innerWidth / window.innerHeight;
+        
+        // Base scale on the more constrained dimension
+        if (viewportAspect < sheetAspect) {
+            // Width-constrained viewport (tall/narrow)
+            this.scale = 3.5 / this.sheetWidth;
+        } else {
+            // Height-constrained viewport (short/wide)
+            this.scale = 3.5 / this.sheetHeight;
+        }
     }
     
     getImagePosition(row, col) {

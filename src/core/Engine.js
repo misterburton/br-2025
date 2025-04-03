@@ -9,9 +9,12 @@ export class Engine {
         // Calculate viewport dimensions
         const aspect = window.innerWidth / window.innerHeight;
         
-        // Set frustum size based on the larger viewport dimension
-        // This ensures the contact sheet fills most of the viewport while maintaining aspect ratio
-        this.frustumSize = 4; // Base size that will be adjusted in onResize
+        // Base frustum size that we'll adjust based on aspect ratio
+        this.baseFrustumSize = 4;
+        
+        // Adjust frustum size based on aspect ratio to ensure full width visibility
+        this.frustumSize = aspect < 1 ? this.baseFrustumSize / aspect : this.baseFrustumSize;
+        
         const halfHeight = this.frustumSize / 2;
         const halfWidth = this.frustumSize * aspect / 2;
         
@@ -83,9 +86,9 @@ export class Engine {
     onResize() {
         const aspect = window.innerWidth / window.innerHeight;
         
-        // Adjust frustum size based on viewport dimensions
-        // Use a larger base size to make the contact sheet more prominent
-        this.frustumSize = 4;
+        // Adjust frustum size based on aspect ratio
+        this.frustumSize = aspect < 1 ? this.baseFrustumSize / aspect : this.baseFrustumSize;
+        
         const halfHeight = this.frustumSize / 2;
         const halfWidth = this.frustumSize * aspect / 2;
         

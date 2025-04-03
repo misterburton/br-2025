@@ -11,8 +11,14 @@ export class ContactSheet {
         this.currentIndex = 0;
         this.isTransitioning = false;
         
+        // Raycaster for pointer intersection
+        this.raycaster = new THREE.Raycaster();
+        // Store pointer coordinates
+        this.pointer = new THREE.Vector2();
+        
         this.setupSheet();
         this.setupTouchHandling();
+        this.setupInteraction();
     }
     
     async setupSheet() {
@@ -28,7 +34,6 @@ export class ContactSheet {
                             image: texture.image,
                             dimensions: `${texture.image.width}x${texture.image.height}`
                         });
-                        // Ensure texture dimensions match our layout
                         texture.repeat.set(1, 1);
                         texture.offset.set(0, 0);
                         resolve(texture);
@@ -44,7 +49,6 @@ export class ContactSheet {
             });
             
             console.log('Creating contact sheet plane...');
-            // Create the background plane
             const dimensions = this.layout.getSheetDimensions();
             console.log('Sheet dimensions:', dimensions);
             
@@ -58,6 +62,9 @@ export class ContactSheet {
             });
             
             this.sheet = new THREE.Mesh(geometry, material);
+            
+            // Center the sheet at origin
+            this.sheet.position.set(0, 0, 0);
             
             // Add wireframe for debugging
             const wireframe = new THREE.WireframeGeometry(geometry);
@@ -93,6 +100,8 @@ export class ContactSheet {
             const boxHelper = new THREE.Box3Helper(box, 0xff0000);
             this.scene.add(boxHelper);
             
+            this.renderer = this.scene.renderer || this.camera.parent?.renderer;
+            
         } catch (error) {
             console.error('Failed to setup contact sheet:', error);
         }
@@ -122,6 +131,93 @@ export class ContactSheet {
         
         document.addEventListener('touchend', () => {
             isDragging = false;
+        });
+    }
+    
+    isOverImage(uv) {
+        if (!uv) return false;
+        
+        // Convert UV to grid coordinates
+        const gridX = Math.floor(uv.x * this.layout.columns);
+        const gridY = Math.floor((1 - uv.y) * this.layout.rows);
+        
+        // Calculate UV space for a single image including margins
+        const imageWidth = this.layout.imageWidth / this.layout.sheetWidth;
+        const imageHeight = this.layout.imageHeight / this.layout.sheetHeight;
+        const marginX = this.layout.horizontalMargin / this.layout.sheetWidth;
+        const marginY = this.layout.verticalMargin / this.layout.sheetHeight;
+        
+        // Calculate local UV within the grid cell
+        const localU = (uv.x * this.layout.columns) % 1;
+        const localV = ((1 - uv.y) * this.layout.rows) % 1;
+        
+        // Check if we're within image bounds (accounting for margins)
+        const cellWidth = 1 / this.layout.columns;
+        const cellHeight = 1 / this.layout.rows;
+        const imageStartX = (marginX / 2) / cellWidth;
+        const imageStartY = (marginY / 2) / cellHeight;
+        const imageEndX = 1 - (marginX / 2) / cellWidth;
+        const imageEndY = 1 - (marginY / 2) / cellHeight;
+        
+        return (
+            gridX >= 0 && gridX < this.layout.columns &&
+            gridY >= 0 && gridY < this.layout.rows &&
+            localU >= imageStartX && localU <= imageEndX &&
+            localV >= imageStartY && localV <= imageEndY
+        );
+    }
+    
+    setupInteraction() {
+        const canvas = this.renderer?.domElement || document.querySelector('canvas');
+        if (!canvas) return;
+        
+        // Pointer move for hover state
+        canvas.addEventListener('pointermove', (event) => {
+            this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            this.raycaster.setFromCamera(this.pointer, this.camera);
+            const intersects = this.raycaster.intersectObject(this.sheet);
+            
+            if (intersects.length > 0 && this.isOverImage(intersects[0].uv)) {
+                canvas.style.cursor = 'pointer';
+            } else {
+                canvas.style.cursor = 'default';
+            }
+        });
+        
+        // Pointer down event
+        canvas.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            
+            this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            this.raycaster.setFromCamera(this.pointer, this.camera);
+            const intersects = this.raycaster.intersectObject(this.sheet);
+            
+            if (intersects.length > 0 && this.isOverImage(intersects[0].uv)) {
+                const intersect = intersects[0];
+                const uv = intersect.uv;
+                const gridX = Math.floor(uv.x * this.layout.columns);
+                const gridY = Math.floor((1 - uv.y) * this.layout.rows);
+                
+                console.log('Image clicked/tapped at:', {
+                    point: {
+                        x: intersect.point.x.toFixed(4),
+                        y: intersect.point.y.toFixed(4),
+                        z: intersect.point.z.toFixed(4)
+                    },
+                    uv: {
+                        u: uv.x.toFixed(4),
+                        v: uv.y.toFixed(4)
+                    },
+                    grid: {
+                        x: gridX,
+                        y: gridY
+                    }
+                });
+            }
         });
     }
     
