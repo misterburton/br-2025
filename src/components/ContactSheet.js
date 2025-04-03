@@ -258,6 +258,11 @@ export class ContactSheet {
         const canvas = this.renderer?.domElement || document.querySelector('canvas');
         if (!canvas) return;
         
+        // Prevent text selection on long press
+        canvas.style.userSelect = 'none';
+        canvas.style.webkitUserSelect = 'none';
+        canvas.style.webkitTouchCallout = 'none';
+        
         // Pointer move for hover state
         canvas.addEventListener('pointermove', (event) => {
             this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -271,6 +276,11 @@ export class ContactSheet {
             } else {
                 canvas.style.cursor = 'default';
             }
+        });
+        
+        // Prevent context menu on long press
+        canvas.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
         });
         
         // Pointer down event
