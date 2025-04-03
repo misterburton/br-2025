@@ -10,6 +10,7 @@ export class ContactSheet {
         this.images = [];
         this.currentIndex = 0;
         this.isTransitioning = false;
+        this.isZoomedIn = false;
         
         // Raycaster for pointer intersection
         this.raycaster = new THREE.Raycaster();
@@ -142,22 +143,36 @@ export class ContactSheet {
         const gridY = Math.floor((1 - uv.y) * this.layout.rows);
         
         // Calculate UV space for a single image including margins
-        const imageWidth = this.layout.imageWidth / this.layout.sheetWidth;
-        const imageHeight = this.layout.imageHeight / this.layout.sheetHeight;
-        const marginX = this.layout.horizontalMargin / this.layout.sheetWidth;
-        const marginY = this.layout.verticalMargin / this.layout.sheetHeight;
+        const totalWidth = this.layout.sheetWidth;
+        const totalHeight = this.layout.sheetHeight;
+        const imageWidth = this.layout.imageWidth;
+        const imageHeight = this.layout.imageHeight;
+        const marginX = this.layout.horizontalMargin;
+        const marginY = this.layout.verticalMargin;
+        
+        // Calculate normalized margins
+        const normalizedMarginX = marginX / totalWidth;
+        const normalizedMarginY = marginY / totalHeight;
         
         // Calculate local UV within the grid cell
         const localU = (uv.x * this.layout.columns) % 1;
         const localV = ((1 - uv.y) * this.layout.rows) % 1;
         
-        // Check if we're within image bounds (accounting for margins)
+        // Calculate image bounds within cell, accounting for edge positions
         const cellWidth = 1 / this.layout.columns;
         const cellHeight = 1 / this.layout.rows;
-        const imageStartX = (marginX / 2) / cellWidth;
-        const imageStartY = (marginY / 2) / cellHeight;
-        const imageEndX = 1 - (marginX / 2) / cellWidth;
-        const imageEndY = 1 - (marginY / 2) / cellHeight;
+        
+        // Adjust margins based on position in grid
+        const isLeftEdge = gridX === 0;
+        const isRightEdge = gridX === this.layout.columns - 1;
+        const isTopEdge = gridY === 0;
+        const isBottomEdge = gridY === this.layout.rows - 1;
+        
+        // Calculate start/end positions with edge-aware margins
+        const imageStartX = isLeftEdge ? normalizedMarginX / cellWidth : (marginX / 2) / (totalWidth * cellWidth);
+        const imageEndX = isRightEdge ? 1 - (normalizedMarginX / cellWidth) : 1 - (marginX / 2) / (totalWidth * cellWidth);
+        const imageStartY = isTopEdge ? normalizedMarginY / cellHeight : (marginY / 2) / (totalHeight * cellHeight);
+        const imageEndY = isBottomEdge ? 1 - (normalizedMarginY / cellHeight) : 1 - (marginY / 2) / (totalHeight * cellHeight);
         
         return (
             gridX >= 0 && gridX < this.layout.columns &&
@@ -165,6 +180,62 @@ export class ContactSheet {
             localU >= imageStartX && localU <= imageEndX &&
             localV >= imageStartY && localV <= imageEndY
         );
+    }
+    
+    zoomToImage(gridX, gridY) {
+        if (this.isTransitioning) return;
+        this.isTransitioning = true;
+        
+        // Get position for the target image
+        const imagePos = this.layout.getImagePosition(gridY, gridX);
+        
+        // Calculate zoom level to make image fill most of viewport
+        const zoomScale = 4; // Scale up the sheet to make the image larger
+        
+        gsap.to(this.sheet.position, {
+            x: imagePos.x * -zoomScale, // Multiply by scale to account for the scaling effect
+            y: imagePos.y * -zoomScale,
+            z: 0.5,
+            duration: 0.75,
+            ease: 'power2.inOut'
+        });
+        
+        gsap.to(this.sheet.scale, {
+            x: zoomScale,
+            y: zoomScale,
+            z: 1,
+            duration: 0.75,
+            ease: 'power2.inOut',
+            onComplete: () => {
+                this.isTransitioning = false;
+                this.isZoomedIn = true;
+            }
+        });
+    }
+    
+    zoomOut() {
+        if (this.isTransitioning) return;
+        this.isTransitioning = true;
+        
+        gsap.to(this.sheet.position, {
+            x: 0,
+            y: 0,
+            z: -0.1,
+            duration: 0.75,
+            ease: 'power2.inOut'
+        });
+        
+        gsap.to(this.sheet.scale, {
+            x: 1,
+            y: 1,
+            z: 1,
+            duration: 0.75,
+            ease: 'power2.inOut',
+            onComplete: () => {
+                this.isTransitioning = false;
+                this.isZoomedIn = false;
+            }
+        });
     }
     
     setupInteraction() {
@@ -202,6 +273,12 @@ export class ContactSheet {
                 const gridX = Math.floor(uv.x * this.layout.columns);
                 const gridY = Math.floor((1 - uv.y) * this.layout.rows);
                 
+                if (this.isZoomedIn) {
+                    this.zoomOut();
+                } else {
+                    this.zoomToImage(gridX, gridY);
+                }
+                
                 console.log('Image clicked/tapped at:', {
                     point: {
                         x: intersect.point.x.toFixed(4),
@@ -217,41 +294,6 @@ export class ContactSheet {
                         y: gridY
                     }
                 });
-            }
-        });
-    }
-    
-    zoomToImage(row, col) {
-        if (this.isTransitioning) return;
-        this.isTransitioning = true;
-        
-        const position = this.layout.getImagePosition(row, col);
-        
-        gsap.to(this.camera.position, {
-            x: position.x,
-            y: position.y,
-            z: position.width * 1.5, // Adjust this value to control zoom level
-            duration: 1,
-            ease: 'power2.inOut',
-            onComplete: () => {
-                this.isTransitioning = false;
-                this.currentIndex = row * this.layout.columns + col;
-            }
-        });
-    }
-    
-    zoomOut() {
-        if (this.isTransitioning) return;
-        this.isTransitioning = true;
-        
-        gsap.to(this.camera.position, {
-            x: 0,
-            y: 0,
-            z: this.layout.getCameraDistance(),
-            duration: 1,
-            ease: 'power2.inOut',
-            onComplete: () => {
-                this.isTransitioning = false;
             }
         });
     }
