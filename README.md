@@ -79,55 +79,98 @@ src/
 - Maintains proper perspective during transitions
 
 #### Interaction System
-- Touch/mouse event handling
-- Velocity-based animations
-- State management for transitions
+- Precise hit detection using exact grid coordinates
+- Long press to zoom out when viewing individual images
+- Distinct zoom in/out animations with wingsuit-like motion
+- State management for preventing interaction during transitions
 
-#### Debug Tools
-- OrbitControls for camera manipulation
-- GUI controls for camera position
-- Axes and bounding box helpers
-- Console logging for key operations
+#### Animation System
+- Zoom In:
+  - Quick initial scale (0.75s, Quad.easeIn)
+  - Graceful position transition (1.5s, Quint.easeInOut)
+  - Coordinated animations with overwrite prevention
+- Zoom Out:
+  - Delayed scale down (0.85s, Cubic.easeInOut, 0.25s delay)
+  - Quick position return (0.57s, Cubic.easeIn)
+  - Maintains visual continuity
 
-### Implementation Notes
-
-#### Contact Sheet Setup
+#### Hit Detection
 ```javascript
-// Scale calculation for fitting sheet to viewport
-calculateScale() {
-    // Scale everything down so sheet height is 2 units
-    this.scale = 2 / this.sheetHeight;
-}
-
-// Camera distance calculation
-getCameraDistance() {
-    const vFov = 75 * Math.PI / 180;
-    const aspect = window.innerWidth / window.innerHeight;
-    const height = this.sheetHeight * this.scale;
-    const width = this.sheetWidth * this.scale;
+// Precise hit detection using exact grid coordinates
+isOverImage(uv) {
+    // Convert UV to sheet coordinates
+    const pixelX = uv.x * this.layout.sheetWidth;
+    const pixelY = (1 - uv.y) * this.layout.sheetHeight;
     
-    const heightDistance = height / (2 * Math.tan(vFov / 2));
-    const widthDistance = (width / aspect) / (2 * Math.tan(vFov / 2));
+    // Get grid position using exact same math as grid creation
+    const gridX = Math.floor((pixelX - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
+    const gridY = Math.floor((pixelY - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
     
-    return Math.max(heightDistance, widthDistance) * 1.1;
+    // Get exact image position
+    const imageX = this.layout.firstImageX + (gridX * (this.layout.imageWidth + this.layout.horizontalMargin));
+    const imageY = this.layout.firstImageY + (gridY * (this.layout.imageHeight + this.layout.verticalMargin));
+    
+    // Test against exact image bounds
+    const isHit = 
+        pixelX >= imageX && 
+        pixelX <= imageX + this.layout.imageWidth &&
+        pixelY >= imageY && 
+        pixelY <= imageY + this.layout.imageHeight;
+        
+    return this.isZoomedIn 
+        ? (isHit && gridX === this.currentGridX && gridY === this.currentGridY)
+        : (isHit && gridX >= 0 && gridX < this.layout.columns && gridY >= 0 && gridY < this.layout.rows);
 }
 ```
 
-#### Image Position Calculation
+#### Animation Implementation
 ```javascript
-getImagePosition(row, col) {
-    const pixelX = this.firstImageX + (col * (this.imageWidth + this.horizontalMargin));
-    const pixelY = this.firstImageY + (row * (this.imageHeight + this.verticalMargin));
+// Zoom in animation
+zoomToImage(gridX, gridY) {
+    const imagePos = this.layout.getImagePosition(gridY, gridX);
+    const zoomScale = this.calculateZoomScale();
     
-    const normalizedX = (pixelX + this.imageWidth/2 - this.sheetWidth/2) * this.scale;
-    const normalizedY = -(pixelY + this.imageHeight/2 - this.sheetHeight/2) * this.scale;
+    // Quick initial zoom with Quad.easeIn
+    gsap.to(this.sheet.scale, {
+        x: zoomScale,
+        y: zoomScale,
+        z: 1,
+        duration: 0.75,
+        ease: "power2.in"
+    });
     
-    return {
-        x: normalizedX,
-        y: normalizedY,
-        width: this.imageWidth * this.scale,
-        height: this.imageHeight * this.scale
-    };
+    // Graceful arc to position with Quint.easeInOut
+    gsap.to(this.sheet.position, {
+        x: imagePos.x * -zoomScale,
+        y: imagePos.y * -zoomScale,
+        z: 0.5,
+        duration: 1.5,
+        ease: "power4.inOut",
+        overwrite: false
+    });
+}
+
+// Zoom out animation
+zoomOut() {
+    // Scale down with Cubic.easeInOut
+    gsap.to(this.sheet.scale, {
+        x: 1,
+        y: 1,
+        z: 1,
+        duration: 0.85,
+        ease: "power3.inOut",
+        delay: 0.25
+    });
+    
+    // Quick return to center with Cubic.easeIn
+    gsap.to(this.sheet.position, {
+        x: 0,
+        y: 0,
+        z: -0.1,
+        duration: 0.57,
+        ease: "power3.in",
+        overwrite: false
+    });
 }
 ```
 
@@ -144,9 +187,7 @@ getImagePosition(row, col) {
 - Console logging for key operations
 
 ## Next Steps
-- Implement click/tap detection for image zoom
 - Add swipe navigation when zoomed in
 - Create bottom navigation UI
 - Add multiple contact sheets for different sections
-- Implement touch gesture handling
 - Add loading states and transitions 
