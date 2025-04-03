@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { GUI } from 'lil-gui';
 
 export class Engine {
@@ -39,10 +38,6 @@ export class Engine {
         // Add axes helper
         this.axesHelper = new THREE.AxesHelper(5);
         this.scene.add(this.axesHelper);
-        
-        // Add orbit controls for debugging
-        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableDamping = true;
         
         // Initialize debug tools
         this.setupDebugTools();
@@ -106,9 +101,6 @@ export class Engine {
     start() {
         this.renderer.setAnimationLoop(() => {
             if (this.stats) this.stats.begin();
-            
-            // Update controls
-            this.controls.update();
             
             this.renderer.render(this.scene, this.camera);
             
