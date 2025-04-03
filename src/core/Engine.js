@@ -7,9 +7,20 @@ export class Engine {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x000000);
         
-        this.camera = new THREE.PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
+        // Calculate viewport dimensions
+        const aspect = window.innerWidth / window.innerHeight;
+        
+        // Set frustum size based on the larger viewport dimension
+        // This ensures the contact sheet fills most of the viewport while maintaining aspect ratio
+        this.frustumSize = 4; // Base size that will be adjusted in onResize
+        const halfHeight = this.frustumSize / 2;
+        const halfWidth = this.frustumSize * aspect / 2;
+        
+        this.camera = new THREE.OrthographicCamera(
+            -halfWidth,
+            halfWidth,
+            halfHeight,
+            -halfHeight,
             0.1,
             1000
         );
@@ -75,7 +86,19 @@ export class Engine {
     }
     
     onResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
+        const aspect = window.innerWidth / window.innerHeight;
+        
+        // Adjust frustum size based on viewport dimensions
+        // Use a larger base size to make the contact sheet more prominent
+        this.frustumSize = 4;
+        const halfHeight = this.frustumSize / 2;
+        const halfWidth = this.frustumSize * aspect / 2;
+        
+        this.camera.left = -halfWidth;
+        this.camera.right = halfWidth;
+        this.camera.top = halfHeight;
+        this.camera.bottom = -halfHeight;
+        
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }

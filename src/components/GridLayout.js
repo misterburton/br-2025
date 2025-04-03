@@ -26,8 +26,9 @@ export class GridLayout {
     }
     
     calculateScale() {
-        // We'll scale everything down so the sheet height is 2 units in the scene
-        this.scale = 2 / this.sheetHeight;
+        // Scale everything down so the sheet height is 3.5 units in the scene
+        // This will fill most of our 4-unit frustum while leaving some margin
+        this.scale = 3.5 / this.sheetHeight;
     }
     
     getImagePosition(row, col) {
