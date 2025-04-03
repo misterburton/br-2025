@@ -7,21 +7,21 @@ export class ContactSheet {
         this.scene = scene;
         this.camera = camera;
         this.layout = new GridLayout();
-        this.images = [];
-        this.currentIndex = 0;
-        this.isTransitioning = false;
-        this.isZoomedIn = false;
         this.currentGridX = -1;
         this.currentGridY = -1;
+        this.isTransitioning = false;
+        this.isZoomedIn = false;
+        
+        // Interaction state
+        this.raycaster = new THREE.Raycaster();
+        this.pointer = new THREE.Vector2();
+        this.swipeStart = null;
+        this.swipeThreshold = 50; // Minimum distance for swipe detection
         
         // Long press handling
         this.longPressTimer = null;
         this.longPressDuration = 500;
         this.isLongPressing = false;
-        
-        // Raycaster for pointer intersection
-        this.raycaster = new THREE.Raycaster();
-        this.pointer = new THREE.Vector2();
         
         this.setupSheet();
         this.setupInteraction();
@@ -157,27 +157,17 @@ export class ContactSheet {
         canvas.style.webkitUserSelect = 'none';
         canvas.style.webkitTouchCallout = 'none';
         
-        canvas.addEventListener('pointermove', (event) => {
-            this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            
-            this.raycaster.setFromCamera(this.pointer, this.camera);
-            const intersects = this.raycaster.intersectObject(this.sheet);
-            
-            if (intersects.length > 0 && this.isOverImage(intersects[0].uv)) {
-                canvas.style.cursor = 'pointer';
-            } else {
-                canvas.style.cursor = 'default';
-            }
-        });
-        
-        canvas.addEventListener('contextmenu', (event) => {
-            event.preventDefault();
-        });
-        
+        // Handle pointer down
         canvas.addEventListener('pointerdown', (event) => {
             event.preventDefault();
             
+            // Initialize swipe tracking
+            this.swipeStart = {
+                x: event.clientX || event.touches[0].clientX,
+                y: event.clientY || event.touches[0].clientY
+            };
+            
+            // Handle click/tap
             this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
             this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
             
@@ -189,11 +179,9 @@ export class ContactSheet {
                 const uv = intersect.uv;
                 
                 if (this.isZoomedIn) {
-                    // Get the grid position of the click
                     const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
                     const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
                     
-                    // If clicking current image, start long press timer
                     if (gridX === this.currentGridX && gridY === this.currentGridY) {
                         this.isLongPressing = true;
                         this.longPressTimer = setTimeout(() => {
@@ -202,16 +190,13 @@ export class ContactSheet {
                             }
                         }, this.longPressDuration);
                     } else if (!this.isTransitioning) {
-                        // Calculate relative position to current image
                         const relativeX = gridX - this.currentGridX;
                         const relativeY = gridY - this.currentGridY;
                         
-                        // If we're clicking in the general area of an adjacent image
                         if (Math.abs(relativeX) <= 1 && Math.abs(relativeY) <= 1) {
                             const targetX = this.currentGridX + relativeX;
                             const targetY = this.currentGridY + relativeY;
                             
-                            // Only navigate if target is within grid bounds
                             if (targetX >= 0 && targetX < this.layout.columns && 
                                 targetY >= 0 && targetY < this.layout.rows) {
                                 this.slideToImage(targetX, targetY);
@@ -219,34 +204,79 @@ export class ContactSheet {
                         }
                     }
                 } else {
-                    // Not zoomed in - use normal hit detection
                     const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
                     const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
                     
                     if (this.isOverImage(uv)) {
-                        this.currentGridX = gridX;
-                        this.currentGridY = gridY;
                         this.zoomToImage(gridX, gridY);
                     }
                 }
             }
         });
         
-        canvas.addEventListener('pointerup', () => {
-            this.isLongPressing = false;
-            if (this.longPressTimer) {
-                clearTimeout(this.longPressTimer);
-                this.longPressTimer = null;
+        // Handle pointer move
+        canvas.addEventListener('pointermove', (event) => {
+            if (!this.isZoomedIn || this.isTransitioning || !this.swipeStart) return;
+            
+            const currentX = event.clientX || event.touches[0].clientX;
+            const currentY = event.clientY || event.touches[0].clientY;
+            
+            const deltaX = currentX - this.swipeStart.x;
+            const deltaY = currentY - this.swipeStart.y;
+            
+            // Calculate distance moved
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            
+            // If we've moved enough to consider it a swipe
+            if (distance > this.swipeThreshold) {
+                let targetX = this.currentGridX;
+                let targetY = this.currentGridY;
+                
+                // Determine direction based on which delta is larger
+                if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                    // Horizontal swipe - right is positive, left is negative
+                    targetX -= Math.sign(deltaX);
+                } else {
+                    // Vertical swipe - down is positive (show image above), up is negative (show image below)
+                    targetY -= Math.sign(deltaY);
+                }
+                
+                // Check if target is within bounds
+                if (targetX >= 0 && targetX < this.layout.columns && 
+                    targetY >= 0 && targetY < this.layout.rows) {
+                    this.slideToImage(targetX, targetY);
+                }
+                
+                // Reset swipe tracking
+                this.swipeStart = null;
             }
         });
         
-        canvas.addEventListener('pointerleave', () => {
+        // Handle pointer up/leave
+        const handlePointerEnd = () => {
+            this.swipeStart = null;
             this.isLongPressing = false;
             if (this.longPressTimer) {
                 clearTimeout(this.longPressTimer);
                 this.longPressTimer = null;
             }
+        };
+        
+        canvas.addEventListener('pointerup', handlePointerEnd);
+        canvas.addEventListener('pointerleave', handlePointerEnd);
+        
+        // Handle hover
+        canvas.addEventListener('pointermove', (event) => {
+            this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            this.raycaster.setFromCamera(this.pointer, this.camera);
+            const intersects = this.raycaster.intersectObject(this.sheet);
+            
+            canvas.style.cursor = (intersects.length > 0 && this.isOverImage(intersects[0].uv)) ? 'pointer' : 'default';
         });
+        
+        canvas.addEventListener('contextmenu', (event) => event.preventDefault());
     }
     
     slideToImage(gridX, gridY) {
