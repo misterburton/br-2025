@@ -235,14 +235,14 @@ export class ContactSheet {
         if (this.isTransitioning) return;
         this.isTransitioning = true;
         
-        // Scale down with same easing as zoom in
+        // Scale down with Cubic.easeInOut
         gsap.to(this.sheet.scale, {
             x: 1,
             y: 1,
             z: 1,
-            duration: 0.75,
-            ease: "power2.in",
-            delay: 0.1, // Small delay to create separation
+            duration: 0.85,
+            ease: "power3.inOut",
+            delay: 0.25,
             onComplete: () => {
                 this.isTransitioning = false;
                 this.isZoomedIn = false;
@@ -254,7 +254,7 @@ export class ContactSheet {
             x: 0,
             y: 0,
             z: -0.1,
-            duration: 0.5, // 2/3 of scale duration
+            duration: 0.57, // 2/3 of 0.85
             ease: "power3.in",
             overwrite: false
         });
