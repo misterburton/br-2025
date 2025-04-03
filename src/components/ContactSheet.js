@@ -235,27 +235,28 @@ export class ContactSheet {
         if (this.isTransitioning) return;
         this.isTransitioning = true;
         
-        // Quick initial scale down
+        // Scale down with same easing as zoom in
         gsap.to(this.sheet.scale, {
             x: 1,
             y: 1,
             z: 1,
             duration: 0.75,
-            ease: "power2.in"
-        });
-        
-        // Graceful arc back to center
-        gsap.to(this.sheet.position, {
-            x: 0,
-            y: 0,
-            z: -0.1,
-            duration: 1.5,
-            ease: "power4.inOut",
-            overwrite: false,
+            ease: "power2.in",
+            delay: 0.1, // Small delay to create separation
             onComplete: () => {
                 this.isTransitioning = false;
                 this.isZoomedIn = false;
             }
+        });
+        
+        // Quick return to center with Cubic.easeIn
+        gsap.to(this.sheet.position, {
+            x: 0,
+            y: 0,
+            z: -0.1,
+            duration: 0.5, // 2/3 of scale duration
+            ease: "power3.in",
+            overwrite: false
         });
     }
     
