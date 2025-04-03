@@ -207,20 +207,23 @@ export class ContactSheet {
         const imagePos = this.layout.getImagePosition(gridY, gridX);
         const zoomScale = this.calculateZoomScale();
         
-        gsap.to(this.sheet.position, {
-            x: imagePos.x * -zoomScale,
-            y: imagePos.y * -zoomScale,
-            z: 0.5,
-            duration: 0.75,
-            ease: 'power2.inOut'
-        });
-        
+        // Quick initial zoom with Quad.easeIn
         gsap.to(this.sheet.scale, {
             x: zoomScale,
             y: zoomScale,
             z: 1,
             duration: 0.75,
-            ease: 'power2.inOut',
+            ease: "power2.in"
+        });
+        
+        // Graceful arc to position with Quint.easeInOut
+        gsap.to(this.sheet.position, {
+            x: imagePos.x * -zoomScale,
+            y: imagePos.y * -zoomScale,
+            z: 0.5,
+            duration: 1.5,
+            ease: "power4.inOut",
+            overwrite: false,
             onComplete: () => {
                 this.isTransitioning = false;
                 this.isZoomedIn = true;
@@ -232,20 +235,23 @@ export class ContactSheet {
         if (this.isTransitioning) return;
         this.isTransitioning = true;
         
-        gsap.to(this.sheet.position, {
-            x: 0,
-            y: 0,
-            z: -0.1,
-            duration: 0.75,
-            ease: 'power2.inOut'
-        });
-        
+        // Quick initial scale down
         gsap.to(this.sheet.scale, {
             x: 1,
             y: 1,
             z: 1,
             duration: 0.75,
-            ease: 'power2.inOut',
+            ease: "power2.in"
+        });
+        
+        // Graceful arc back to center
+        gsap.to(this.sheet.position, {
+            x: 0,
+            y: 0,
+            z: -0.1,
+            duration: 1.5,
+            ease: "power4.inOut",
+            overwrite: false,
             onComplete: () => {
                 this.isTransitioning = false;
                 this.isZoomedIn = false;
