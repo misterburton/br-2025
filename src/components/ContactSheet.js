@@ -182,18 +182,33 @@ export class ContactSheet {
         );
     }
     
+    calculateZoomScale() {
+        // Get viewport dimensions
+        const viewportAspect = window.innerWidth / window.innerHeight;
+        
+        // Base scale for mobile (portrait)
+        const baseScale = 9;
+        
+        // For landscape/desktop views, adjust scale based on viewport aspect ratio
+        if (viewportAspect > 1) {
+            // Wide viewport - scale down proportionally but not as aggressively
+            return baseScale * 0.7; // Reduce base scale by a fixed amount for landscape
+        }
+        
+        // Tall/narrow viewport - use base scale
+        return baseScale;
+    }
+
     zoomToImage(gridX, gridY) {
         if (this.isTransitioning) return;
         this.isTransitioning = true;
         
         // Get position for the target image
         const imagePos = this.layout.getImagePosition(gridY, gridX);
-        
-        // Calculate zoom level to make image fill most of viewport
-        const zoomScale = 4; // Scale up the sheet to make the image larger
+        const zoomScale = this.calculateZoomScale();
         
         gsap.to(this.sheet.position, {
-            x: imagePos.x * -zoomScale, // Multiply by scale to account for the scaling effect
+            x: imagePos.x * -zoomScale,
             y: imagePos.y * -zoomScale,
             z: 0.5,
             duration: 0.75,
