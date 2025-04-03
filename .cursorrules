@@ -1,0 +1,196 @@
+rules:
+  - name: "Rules Acknowledgment"
+    pattern: "**/*"
+    checks:
+      - type: "require_confirmation"
+        when: "starting_session"
+        message: "CONFIRM you have read and understood .cursorrules"
+      - type: "require_review"
+        when: "before_first_edit"
+        message: "VERIFY proposed changes comply with ALL rules"
+      - type: "prevent_continuation"
+        when: "rules_violation_detected"
+        message: "STOP immediately if any rule would be violated"
+
+  - name: "Preserve Working Code"
+    pattern: "src/components/ContactSheet.js"
+    checks:
+      - type: "prevent_modification"
+        when: "code_is_functional"
+        message: "DO NOT modify working code just to try a 'different approach'"
+
+  - name: "Camera Movement Guards"
+    pattern: "**/*.js"
+    checks:
+      - type: "prevent_pattern"
+        match: "camera\\.lookAt\\(.*\\)"
+        message: "DO NOT use lookAt() with orthographic cameras - maintain perpendicular view"
+      - type: "prevent_pattern"
+        match: "camera\\.position\\.z"
+        message: "DO NOT modify Z position of orthographic camera for zoom"
+
+  - name: "Zoom Logic Protection"
+    pattern: "src/components/**/*.js"
+    checks:
+      - type: "prevent_change"
+        when: "replacing_working_feature"
+        message: "DO NOT replace working zoom logic without thorough testing"
+      - type: "prevent_pattern"
+        match: "zoomScale.*\\*.*[0-9]"
+        message: "DO NOT make up random multipliers for zoom calculations"
+
+  - name: "Architectural Changes"
+    pattern: "src/**/*.js"
+    checks:
+      - type: "prevent_change"
+        when: "changing_core_mechanics"
+        message: "DO NOT switch from object movement to camera movement without approval"
+
+  - name: "Overcomplication Prevention"
+    pattern: "**/*.js"
+    checks:
+      - type: "complexity_threshold"
+        max_changes_per_commit: 10
+        message: "STOP. You're overcomplicating this. Smaller, tested changes only."
+
+  - name: "GSAP Implementation"
+    pattern: "src/libs/gsap.js"
+    checks:
+      - type: "prevent_modification"
+        message: "DO NOT modify custom GSAP implementation without understanding it"
+
+  - name: "Coordinate System Protection"
+    pattern: "src/components/**/*.js"
+    checks:
+      - type: "prevent_pattern"
+        match: "1\\s*-\\s*uv\\.y"
+        message: "DO NOT mess with coordinate system transformations that already work"
+
+  - name: "Feedback Adherence"
+    pattern: "**/*"
+    checks:
+      - type: "require_review"
+        when: "user_provided_feedback"
+        message: "STOP AND LISTEN when the user tells you something isn't working"
+
+  - name: "Rewrite Prevention"
+    pattern: "src/**/*.js"
+    checks:
+      - type: "prevent_bulk_change"
+        threshold: "30%"
+        message: "DO NOT rewrite large portions of working code"
+
+  - name: "Debugging Guard"
+    pattern: "**/*.js"
+    checks:
+      - type: "require_confirmation"
+        when: "multiple_failed_attempts"
+        message: "STOP. If you've failed to fix this 3 times, step back and reassess"
+
+  - name: "Code Cleanliness"
+    pattern: "**/*.js"
+    checks:
+      - type: "detect_pattern"
+        match: "(?:console\\.log|debugger|TODO)"
+        message: "REMOVE debug statements and TODOs before committing"
+      - type: "detect_pattern"
+        match: "\\s+$"
+        message: "REMOVE trailing whitespace"
+      - type: "detect_pattern"
+        match: "^\\s*$\\n{2,}"
+        message: "REMOVE multiple blank lines"
+
+  - name: "Dead Code Prevention"
+    pattern: "**/*.js"
+    checks:
+      - type: "detect_pattern"
+        match: "/\\*\\s*(?:commented out|old version|backup).*?\\*/"
+        message: "REMOVE commented out code - use version control instead"
+      - type: "detect_pattern"
+        match: "function\\s+\\w+\\s*\\([^)]*\\)\\s*{[^}]*}\\s*(?://|/\\*).*unused"
+        message: "REMOVE unused functions"
+
+  - name: "Duplicate Code Prevention"
+    pattern: "**/*.js"
+    checks:
+      - type: "similarity_threshold"
+        max_similarity: 0.8
+        min_lines: 5
+        message: "REFACTOR duplicate code into reusable functions"
+
+  - name: "Tech Debt Prevention"
+    pattern: "**/*.js"
+    checks:
+      - type: "detect_pattern"
+        match: "(?://|/\\*).*(?:FIXME|HACK|XXX|TODO)"
+        message: "ADDRESS tech debt markers immediately"
+      - type: "detect_pattern"
+        match: "try\\s*{[^}]*}\\s*catch\\s*\\([^)]*\\)\\s*{\\s*(?:console|//)"
+        message: "IMPLEMENT proper error handling instead of just logging"
+
+  - name: "Time Protection"
+    pattern: "**/*"
+    checks:
+      - type: "require_confirmation"
+        when: "time_spent > 30_minutes"
+        message: "STOP AND REVERT if no clear progress after 30 minutes"
+      - type: "prevent_change"
+        when: "approaching_deadline"
+        message: "DO NOT experiment with new approaches near deadlines"
+
+  - name: "Scope Creep Prevention"
+    pattern: "**/*"
+    checks:
+      - type: "prevent_change"
+        when: "modifying_unrelated_files"
+        message: "STAY FOCUSED on the specific task - do not expand scope"
+      - type: "require_review"
+        when: "changing_multiple_systems"
+        message: "VERIFY changes are actually necessary for current task"
+
+  - name: "Working State Protection"
+    pattern: "**/*"
+    checks:
+      - type: "require_backup"
+        before: "major_change"
+        message: "SAVE working state before attempting risky changes"
+      - type: "prevent_deletion"
+        when: "no_replacement_ready"
+        message: "DO NOT delete working code without tested replacement"
+
+  - name: "Hubris Prevention"
+    pattern: "**/*"
+    checks:
+      - type: "require_confirmation"
+        when: "replacing_proven_solution"
+        message: "STOP. Are you sure your 'better' approach is actually better?"
+      - type: "prevent_change"
+        when: "ignoring_user_expertise"
+        message: "LISTEN to the user - they know their codebase better than you"
+
+  - name: "Progress Validation"
+    pattern: "**/*"
+    checks:
+      - type: "require_verification"
+        every: "5_minutes"
+        message: "VERIFY changes are moving toward goal, not away from it"
+      - type: "prevent_continuation"
+        when: "making_things_worse"
+        message: "STOP and revert if changes are degrading functionality"
+
+  - name: "Complexity Budget"
+    pattern: "**/*.js"
+    checks:
+      - type: "prevent_change"
+        when: "increasing_complexity"
+        message: "SIMPLIFY existing code before adding new complexity"
+      - type: "complexity_threshold"
+        max_cognitive_complexity: 15
+        message: "BREAK DOWN complex changes into simpler steps"
+
+meta:
+  description: "Rules to prevent an AI from destroying a perfectly functional codebase through overthinking and hubris"
+  version: "1.0.0"
+  author: "A chastened AI that learned its lesson the hard way"
+  warning: "These rules exist because an AI wasted 3 hours breaking working code"
+  enforcement: "Rules MUST be acknowledged before ANY code generation or modification" 
