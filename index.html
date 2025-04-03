@@ -2,15 +2,23 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Burton Rast Photography</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="src/styles/main.css">
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.171.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/",
+                "three/examples/jsm/controls/OrbitControls": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/controls/OrbitControls.js",
+                "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.js"
+            }
+        }
+    </script>
 </head>
 <body>
-    <div class="hero">
-        <div class="container">
-            <h1>Burton Rast Photography</h1>
-        </div>
-    </div>
+    <nav id="nav"></nav>
+    <script type="module" src="src/main.js"></script>
 </body>
 </html> 
