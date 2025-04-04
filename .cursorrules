@@ -12,6 +12,19 @@ rules:
         when: "rules_violation_detected"
         message: "STOP immediately if any rule would be violated"
 
+  - name: "Step-by-Step Implementation"
+    pattern: "**/*"
+    checks:
+      - type: "require_confirmation"
+        when: "before_implementation"
+        message: "VERIFY you are solving ONE specific problem before proceeding"
+      - type: "prevent_change"
+        when: "implementing_multiple_features"
+        message: "IMPLEMENT and TEST one feature at a time - never chain untested implementations"
+      - type: "prevent_bulk_change"
+        threshold: "5%"
+        message: "SMALLER CHANGES! Solve one problem at a time with minimal code"
+
   - name: "Preserve Working Code"
     pattern: "src/components/ContactSheet.js"
     checks:

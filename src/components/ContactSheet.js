@@ -22,22 +22,29 @@ const SheetState = {
 };
 
 export class ContactSheet {
-    constructor(scene, camera, sheetId = 'sheet_one') {
+    constructor(scene, camera, sheetId = 'sheet_one', gradientBackground = null) {
         this.scene = scene;
         this.camera = camera;
         this.layout = new GridLayout();
         this.state = SheetState.IDLE;
         this.sheetId = sheetId;
+        this.gradientBackground = gradientBackground;
         
         // Create a reusable texture loader
         this.textureLoader = new THREE.TextureLoader();
         
+        // Calculate and store current frustum settings - this will be recalculated on resize
+        const aspect = window.innerWidth / window.innerHeight;
+        const frustumSize = aspect > 1 ? 4 : 4 / aspect;
+        const halfHeight = frustumSize / 2;
+        const halfWidth = frustumSize * aspect / 2;
+        
         // Store original camera settings
         this.originalFrustum = {
-            left: camera.left,
-            right: camera.right,
-            top: camera.top,
-            bottom: camera.bottom
+            left: -halfWidth,
+            right: halfWidth,
+            top: halfHeight,
+            bottom: -halfHeight
         };
         
         // Interaction state
@@ -343,8 +350,20 @@ export class ContactSheet {
         
         if (this.swipeDirection === 'horizontal') {
             this.camera.position.x -= deltaX;
+            
+            // Move gradient background with parallax effect
+            if (this.gradientBackground) {
+                const parallaxFactor = 0.15;
+                this.gradientBackground.position.x -= deltaX * parallaxFactor;
+            }
         } else {
             this.camera.position.y += deltaY;
+            
+            // Move gradient background with parallax effect
+            if (this.gradientBackground) {
+                const parallaxFactor = 0.15;
+                this.gradientBackground.position.y += deltaY * parallaxFactor;
+            }
         }
         
         this.lastX = event.clientX;
@@ -440,6 +459,18 @@ export class ContactSheet {
                 this.state = SheetState.ZOOMED_IN;
             }
         });
+        
+        // Animate gradient background with parallax effect
+        if (this.gradientBackground) {
+            const parallaxFactor = 0.15; // Reduced for subtler effect
+            gsap.to(this.gradientBackground.position, {
+                x: imagePos.x * parallaxFactor,
+                y: imagePos.y * parallaxFactor,
+                duration: isSubsequentMovement ? 0.7 : 1.8,
+                ease: isSubsequentMovement ? "power2.inOut" : "power3.inOut",
+                overwrite: false
+            });
+        }
     }
     
     zoomOut() {
@@ -453,11 +484,17 @@ export class ContactSheet {
             overwrite: false
         });
         
+        // Recalculate the correct frustum based on current aspect ratio
+        const aspect = window.innerWidth / window.innerHeight;
+        const frustumSize = aspect > 1 ? 4 : 4 / aspect;
+        const halfHeight = frustumSize / 2;
+        const halfWidth = frustumSize * aspect / 2;
+        
         gsap.to(this.camera, {
-            left: this.originalFrustum.left,
-            right: this.originalFrustum.right,
-            top: this.originalFrustum.top,
-            bottom: this.originalFrustum.bottom,
+            left: -halfWidth,
+            right: halfWidth,
+            top: halfHeight,
+            bottom: -halfHeight,
             duration: ANIMATION_DURATIONS.ZOOM_OUT_FRUSTUM,
             delay: ANIMATION_DURATIONS.ZOOM_OUT_DELAY,
             ease: "power3.inOut",
@@ -465,9 +502,28 @@ export class ContactSheet {
                 this.camera.updateProjectionMatrix();
             },
             onComplete: () => {
+                // Update the stored original frustum with the current values
+                this.originalFrustum = {
+                    left: -halfWidth,
+                    right: halfWidth,
+                    top: halfHeight,
+                    bottom: -halfHeight
+                };
                 this.state = SheetState.IDLE;
             }
         });
+        
+        // Reset gradient background position
+        if (this.gradientBackground) {
+            gsap.to(this.gradientBackground.position, {
+                x: 0,
+                y: 0,
+                duration: ANIMATION_DURATIONS.ZOOM_OUT_FRUSTUM * 1.2,
+                delay: ANIMATION_DURATIONS.ZOOM_OUT_DELAY * 0.5,
+                ease: "power2.out",
+                overwrite: false
+            });
+        }
     }
     
     // Helper method to load textures with proper encoding
@@ -868,5 +924,48 @@ export class ContactSheet {
             }
             this.scene.remove(mesh);
         });
+    }
+
+    handleResize() {
+        // Always recalculate the correct frustum based on current aspect ratio
+        const aspect = window.innerWidth / window.innerHeight;
+        const frustumSize = aspect > 1 ? 4 : 4 / aspect;
+        const halfHeight = frustumSize / 2;
+        const halfWidth = frustumSize * aspect / 2;
+        
+        // If we're not zoomed in, update the camera immediately
+        if (this.state !== SheetState.ZOOMED_IN) {
+            this.camera.left = -halfWidth;
+            this.camera.right = halfWidth;
+            this.camera.top = halfHeight;
+            this.camera.bottom = -halfHeight;
+            this.camera.updateProjectionMatrix();
+            
+            // Update the stored original frustum
+            this.originalFrustum = {
+                left: -halfWidth,
+                right: halfWidth,
+                top: halfHeight,
+                bottom: -halfHeight
+            };
+        } else {
+            // If zoomed in, we should maintain the zoom level but adjust for the new aspect ratio
+            const { size, aspect: newAspect } = this.calculateZoomFrustum();
+            const halfSize = size / 2;
+            
+            this.camera.left = -halfSize * newAspect;
+            this.camera.right = halfSize * newAspect;
+            this.camera.top = halfSize;
+            this.camera.bottom = -halfSize;
+            this.camera.updateProjectionMatrix();
+            
+            // Still update the original frustum for when we zoom out
+            this.originalFrustum = {
+                left: -halfWidth,
+                right: halfWidth,
+                top: halfHeight,
+                bottom: -halfHeight
+            };
+        }
     }
 } 

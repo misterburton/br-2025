@@ -3,7 +3,8 @@ import { ContactSheet } from './components/ContactSheet.js';
 
 // Create scene with optimization flags
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000000);
+// Make scene background transparent to let CSS gradient show through
+scene.background = null;
 
 // Create camera
 const aspect = window.innerWidth / window.innerHeight;
@@ -26,24 +27,29 @@ const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: true,
     powerPreference: 'high-performance',
-    precision: 'mediump', // Good balance between quality and performance
-    stencil: false, // Disable features we don't need
+    precision: 'mediump',
+    stencil: false,
     depth: true
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// Clear with transparent background to let CSS show through
+renderer.setClearColor(0x000000, 0);
 
-// CRITICAL: Set correct color management for photography
-// The colorSpace property is the modern replacement for outputEncoding
+// Set correct color management
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 document.body.appendChild(renderer.domElement);
+
+// Clear inline background styles to ensure CSS is used
+document.body.style.backgroundColor = '';
+document.body.style.margin = '0';
+document.body.style.overflow = 'hidden';
 
 // Initialize contact sheet
 let contactSheet;
 try {
     contactSheet = new ContactSheet(scene, camera, 'sheet_one');
-    // Store renderer in scene for texture optimization access
     scene.renderer = renderer;
     contactSheet.init().catch(console.error);
 } catch (error) {
@@ -72,21 +78,28 @@ const throttledResize = () => {
     if (resizeTimeout) return;
     
     resizeTimeout = setTimeout(() => {
-        const aspect = window.innerWidth / window.innerHeight;
-        const newFrustumSize = aspect > 1 ? 4 : 4 / aspect;
-        const halfHeight = newFrustumSize / 2;
-        const halfWidth = newFrustumSize * aspect / 2;
+        // Let the contact sheet handle the camera aspects
+        if (contactSheet) {
+            contactSheet.handleResize();
+        } else {
+            // Fallback if contact sheet isn't initialized yet
+            const aspect = window.innerWidth / window.innerHeight;
+            const newFrustumSize = aspect > 1 ? 4 : 4 / aspect;
+            const halfHeight = newFrustumSize / 2;
+            const halfWidth = newFrustumSize * aspect / 2;
+            
+            camera.left = -halfWidth;
+            camera.right = halfWidth;
+            camera.top = halfHeight;
+            camera.bottom = -halfHeight;
+            camera.updateProjectionMatrix();
+        }
         
-        camera.left = -halfWidth;
-        camera.right = halfWidth;
-        camera.top = halfHeight;
-        camera.bottom = -halfHeight;
-        camera.updateProjectionMatrix();
-        
+        // Resize renderer
         renderer.setSize(window.innerWidth, window.innerHeight);
         
         resizeTimeout = null;
-    }, 100); // Throttle to max 10 updates per second
+    }, 100);
 };
 
 window.addEventListener('resize', throttledResize);
