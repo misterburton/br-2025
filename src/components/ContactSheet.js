@@ -5,6 +5,7 @@ import { GridLayout } from './GridLayout.js';
 const DOUBLE_TAP_THRESHOLD = 300; // ms
 const SWIPE_VELOCITY_THRESHOLD = 0.3;
 const SWIPE_DISTANCE_THRESHOLD = 50; // pixels
+const DRAG_THRESHOLD = 5; // pixels - distance before a click becomes a drag
 const ANIMATION_DURATIONS = {
     INITIAL_ZOOM: 1,
     SUBSEQUENT_MOVEMENT: 0.3,
@@ -58,6 +59,7 @@ export class ContactSheet {
     async init() {
         try {
             await this.setupSheet();
+            await this.createPlaceholderImages();
             this.setupInteraction();
         } catch (error) {
             console.error('Failed to initialize contact sheet:', error);
@@ -101,6 +103,9 @@ export class ContactSheet {
         const canvas = document.querySelector('canvas');
         if (!canvas) return;
         
+        // Add click flag to track if we've dragged past threshold
+        this.hasMovedBeyondThreshold = false;
+        
         // Handle cursor style based on hover
         this.addEventListener(canvas, 'mousemove', (event) => {
             if (this.state === SheetState.ANIMATING) return;
@@ -121,6 +126,9 @@ export class ContactSheet {
         this.addEventListener(canvas, 'pointerdown', (event) => {
             if (this.state === SheetState.ANIMATING) return;
             
+            // Reset move threshold flag on pointer down
+            this.hasMovedBeyondThreshold = false;
+            
             if (this.state === SheetState.ZOOMED_IN) {
                 this.startDragging(event);
             } else {
@@ -131,13 +139,55 @@ export class ContactSheet {
         // Handle pointer move for dragging
         this.addEventListener(canvas, 'pointermove', (event) => {
             if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+            
+            // Calculate distance moved to distinguish between click and drag
+            if (!this.hasMovedBeyondThreshold) {
+                const deltaX = Math.abs(event.clientX - this.startX);
+                const deltaY = Math.abs(event.clientY - this.startY);
+                
+                if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+                    this.hasMovedBeyondThreshold = true;
+                }
+            }
+            
             this.handleDragging(event);
         });
         
-        // Handle pointer up for drag end
+        // Handle pointer up for drag end or click
         this.addEventListener(canvas, 'pointerup', (event) => {
-            if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
-            this.handleDragEnd(event);
+            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+            
+            // Only consider as a drag if we moved beyond threshold
+            if (this.isDragging) {
+                if (this.hasMovedBeyondThreshold) {
+                    this.handleDragEnd(event);
+                } else {
+                    // If we didn't move beyond threshold, treat as a click instead
+                    this.isDragging = false;
+                    
+                    // Reset cursor
+                    if (canvas) {
+                        canvas.style.cursor = 'default';
+                    }
+                    
+                    // Handle as a click if we're on desktop/tablet
+                    if (this.isDesktopOrTablet()) {
+                        this.handleAdjacentImageClick(event);
+                    }
+                }
+            }
+        });
+        
+        // Add separate direct click handler to ensure clicking works reliably
+        this.addEventListener(canvas, 'click', (event) => {
+            if (this.state !== SheetState.ZOOMED_IN || 
+                this.state === SheetState.ANIMATING || 
+                this.hasMovedBeyondThreshold) return;
+            
+            // Handle as a click on desktop/tablet
+            if (this.isDesktopOrTablet()) {
+                this.handleAdjacentImageClick(event);
+            }
         });
         
         // Handle double click/tap to zoom out
@@ -253,6 +303,9 @@ export class ContactSheet {
                 : 'default';
         }
         
+        // Don't handle as swipe if we didn't move beyond the drag threshold
+        if (!this.hasMovedBeyondThreshold) return;
+        
         const totalDeltaX = event.clientX - this.startX;
         const totalDeltaY = event.clientY - this.startY;
         
@@ -360,33 +413,29 @@ export class ContactSheet {
             const textureLoader = new THREE.TextureLoader();
             const sheetTexture = await new Promise((resolve, reject) => {
                 textureLoader.load(
-                    './src/assets/images/contact-sheet-placeholder.jpg',
-                    (texture) => {
-                        texture.repeat.set(1, 1);
-                        texture.offset.set(0, 0);
-                        resolve(texture);
-                    },
+                    './public/images/contact-sheet-placeholder.jpg',
+                    (texture) => resolve(texture),
                     undefined,
-                    reject
+                    (error) => reject(error)
                 );
             });
             
             const dimensions = this.layout.getSheetDimensions();
             const geometry = new THREE.PlaneGeometry(dimensions.width, dimensions.height);
+            
+            // Create the background plane
             const material = new THREE.MeshBasicMaterial({
                 map: sheetTexture,
-                side: THREE.DoubleSide,
-                transparent: false,
-                opacity: 1,
-                color: 0xffffff
+                side: THREE.FrontSide
             });
             
             this.sheet = new THREE.Mesh(geometry, material);
-            this.sheet.position.set(0, 0, -0.1);
+            this.sheet.position.z = -3;
             this.scene.add(this.sheet);
             
         } catch (error) {
             console.error('Failed to setup contact sheet:', error);
+            throw error;
         }
     }
     
@@ -463,5 +512,129 @@ export class ContactSheet {
         }
         
         return { row: nearestRow, col: nearestCol };
+    }
+    
+    async createPlaceholderImages() {
+        try {
+            const textureLoader = new THREE.TextureLoader();
+            const placeholderTexture = await new Promise((resolve, reject) => {
+                textureLoader.load(
+                    './public/images/600x900.jpg',
+                    (texture) => resolve(texture),
+                    undefined,
+                    (error) => reject(error)
+                );
+            });
+            
+            const imageDimensions = {
+                width: this.layout.imageWidth * this.layout.scale,
+                height: this.layout.imageHeight * this.layout.scale
+            };
+            
+            const geometry = new THREE.PlaneGeometry(imageDimensions.width, imageDimensions.height);
+            
+            // Create and position all placeholders
+            for (let row = 0; row < this.layout.rows; row++) {
+                for (let col = 0; col < this.layout.columns; col++) {
+                    const material = new THREE.MeshBasicMaterial({
+                        map: placeholderTexture
+                    });
+                    
+                    const imageMesh = new THREE.Mesh(geometry, material);
+                    const position = this.layout.getImagePosition(row, col);
+                    
+                    imageMesh.position.set(position.x, position.y, -2);
+                    this.scene.add(imageMesh);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to create placeholder images:', error);
+            throw error;
+        }
+    }
+    
+    isDesktopOrTablet() {
+        // Simple check for desktop or tablet based on screen size
+        return window.innerWidth >= 768;
+    }
+    
+    handleAdjacentImageClick(event) {
+        this.updatePointerPosition(event);
+        
+        // First try raycasting specifically for the placeholder image objects
+        const allIntersects = this.raycaster.intersectObjects(this.scene.children);
+        
+        // Store all image meshes for debugging
+        this.imageMeshes = this.scene.children.filter(child => 
+            child instanceof THREE.Mesh && 
+            Math.abs(child.position.z + 2) < 0.1 &&
+            child.material && 
+            child.material.map
+        );
+        
+        console.log('Available image meshes:', this.imageMeshes.length);
+        
+        // Check for clicks on image meshes
+        const imageIntersects = allIntersects.filter(intersect => 
+            intersect.object instanceof THREE.Mesh &&
+            Math.abs(intersect.object.position.z + 2) < 0.1 && 
+            intersect.object.material && 
+            intersect.object.material.map
+        );
+        
+        console.log('Image intersects found:', imageIntersects.length);
+        
+        let clickedImage = null;
+        
+        if (imageIntersects.length > 0) {
+            // Find which image was clicked based on the position
+            const clickedObject = imageIntersects[0].object;
+            const clickedPosition = clickedObject.position;
+            
+            // Find row and col of the clicked image
+            clickedImage = this.findNearestImage(clickedPosition.x, clickedPosition.y);
+            console.log('Found clicked image via direct intersection:', clickedImage);
+        } 
+        else {
+            // Fallback: Use screen position to determine nearest image
+            // Convert screen to world coordinates
+            const vector = new THREE.Vector3();
+            vector.set(this.pointer.x, this.pointer.y, 0.5);
+            vector.unproject(this.camera);
+            
+            // Find the nearest image to this position
+            clickedImage = this.findNearestImage(vector.x, vector.y);
+            console.log('Found clicked image via nearest position:', clickedImage);
+        }
+        
+        if (!clickedImage) return;
+        
+        console.log('Clicked image:', clickedImage, 'Current image:', this.currentImage);
+        
+        // Check if the clicked image is adjacent to the current one
+        const isAdjacent = 
+            (Math.abs(clickedImage.row - this.currentImage.row) <= 1 &&
+             Math.abs(clickedImage.col - this.currentImage.col) <= 1) &&
+            // Exclude clicking on the current image
+            !(clickedImage.row === this.currentImage.row && 
+              clickedImage.col === this.currentImage.col);
+        
+        console.log('Is adjacent:', isAdjacent);
+        
+        if (isAdjacent) {
+            const imagePos = this.layout.getImagePosition(clickedImage.row, clickedImage.col);
+            
+            gsap.killTweensOf(this.camera.position);
+            
+            gsap.to(this.camera.position, {
+                x: imagePos.x,
+                y: imagePos.y,
+                duration: .4,
+                ease: "power2.out",
+                onComplete: () => {
+                    this.currentImage = clickedImage;
+                }
+            });
+        }
     }
 } 
