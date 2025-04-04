@@ -28,6 +28,13 @@ export class ContactSheet {
         this.layout = new GridLayout();
         this.state = SheetState.IDLE;
         
+        // Determine image path prefix based on environment
+        // Use '/public' for local development, empty for production
+        this.imagePath = window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1' 
+                        ? '/public' 
+                        : '';
+        
         // Store original camera settings
         this.originalFrustum = {
             left: camera.left,
@@ -412,8 +419,11 @@ export class ContactSheet {
         try {
             const textureLoader = new THREE.TextureLoader();
             const sheetTexture = await new Promise((resolve, reject) => {
+                const path = `${this.imagePath}/images/contact-sheet-placeholder.jpg`;
+                console.log('Loading contact sheet texture from:', path);
+                
                 textureLoader.load(
-                    './public/images/contact-sheet-placeholder.jpg',
+                    path,
                     (texture) => resolve(texture),
                     undefined,
                     (error) => reject(error)
@@ -518,8 +528,11 @@ export class ContactSheet {
         try {
             const textureLoader = new THREE.TextureLoader();
             const placeholderTexture = await new Promise((resolve, reject) => {
+                const path = `${this.imagePath}/images/600x900.jpg`;
+                console.log('Loading placeholder texture from:', path);
+                
                 textureLoader.load(
-                    './public/images/600x900.jpg',
+                    path,
                     (texture) => resolve(texture),
                     undefined,
                     (error) => reject(error)
