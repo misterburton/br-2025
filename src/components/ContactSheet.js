@@ -298,6 +298,12 @@ export class ContactSheet {
         
         gsap.killTweensOf(this.camera.position);
         
+        // Explicitly set state to ANIMATING to block any interactions
+        this.state = SheetState.ANIMATING;
+        
+        // Start brightness transition immediately, synchronized with position animation
+        this.setImageBrightness(targetImage.row, targetImage.col);
+        
         gsap.to(this.camera.position, {
             x: imagePos.x,
             y: imagePos.y,
@@ -306,8 +312,11 @@ export class ContactSheet {
             onComplete: () => {
                 this.currentImage = targetImage;
                 
-                // Update brightness to highlight the new active image
-                this.setImageBrightness(targetImage.row, targetImage.col);
+                // Add a small cooldown period after animation completes
+                // to prevent accidental clicks
+                setTimeout(() => {
+                    this.state = SheetState.ZOOMED_IN;
+                }, 150); // 150ms cooldown after animation ends
             }
         });
     }
@@ -378,6 +387,12 @@ export class ContactSheet {
             // Set navigating flag to prevent double navigation
             this.isNavigating = true;
             
+            // Explicitly set state to ANIMATING to block any interactions
+            this.state = SheetState.ANIMATING;
+            
+            // Start brightness transition immediately, synchronized with position animation
+            this.setImageBrightness(clickedImage.row, clickedImage.col);
+            
             gsap.to(this.camera.position, {
                 x: imagePos.x,
                 y: imagePos.y,
@@ -386,13 +401,14 @@ export class ContactSheet {
                 onComplete: () => {
                     this.currentImage = clickedImage;
                     
-                    // Update brightness to highlight the new active image
-                    this.setImageBrightness(clickedImage.row, clickedImage.col);
-                    
-                    // Reset navigation flag after animation completes
+                    // Add a small cooldown period after animation completes
+                    // to prevent accidental clicks
                     setTimeout(() => {
+                        this.state = SheetState.ZOOMED_IN;
+                        
+                        // Reset navigation flag after animation completes and cooldown period
                         this.isNavigating = false;
-                    }, 100);
+                    }, 150); // 150ms cooldown after animation ends
                 }
             });
         }
@@ -614,7 +630,12 @@ export class ContactSheet {
                     top: halfHeight,
                     bottom: -halfHeight
                 };
-                this.state = SheetState.IDLE;
+                
+                // Add a small cooldown period after animation completes
+                // to prevent accidental clicks
+                setTimeout(() => {
+                    this.state = SheetState.IDLE;
+                }, 150); // 150ms cooldown after animation ends
             }
         });
         
@@ -847,6 +868,10 @@ export class ContactSheet {
     
     // Set image brightness to highlight the active image
     setImageBrightness(activeRow, activeCol) {
+        // Use consistent timing with position animations
+        const transitionDuration = this.state === SheetState.ANIMATING ? 
+            ANIMATION_DURATIONS.SUBSEQUENT_MOVEMENT * 0.85 : 0.4;
+        
         // Find all sheet image meshes in the scene
         this.scene.traverse(object => {
             if (object instanceof THREE.Mesh && 
@@ -858,21 +883,22 @@ export class ContactSheet {
                 if (object.material) {
                     // For the active image, ensure full brightness
                     if (row === activeRow && col === activeCol) {
-                        // Active image - full brightness
+                        // Active image - fade to full brightness
                         gsap.to(object.material.color, {
                             r: 1.0,
                             g: 1.0,
                             b: 1.0,
-                            duration: 0.35
+                            duration: transitionDuration,
+                            ease: "power2.inOut" // Smoother in-out easing
                         });
                     } else {
-                        // Inactive image - darken by using color as a multiplier
-                        // This preserves the image appearance better than opacity
+                        // Inactive image - fade to darker state
                         gsap.to(object.material.color, {
                             r: 0.1,
                             g: 0.1,
                             b: 0.1,
-                            duration: 0.5
+                            duration: transitionDuration,
+                            ease: "power2.inOut" // Smoother in-out easing
                         });
                     }
                 }
@@ -882,27 +908,25 @@ export class ContactSheet {
     
     // Restore all images to full brightness
     resetImageBrightness() {
-        // First, immediately set the state to ensure any in-progress animations don't interfere
+        // First, kill any in-progress color animations to prevent conflicts
         gsap.killTweensOf(this.scene.children.filter(obj => 
             obj instanceof THREE.Mesh && obj.userData && obj.userData.isSheetImage
         ).map(obj => obj.material?.color));
         
-        // Then traverse and explicitly set all materials to full brightness
+        // Then animate all images to full brightness
         this.scene.traverse(object => {
             if (object instanceof THREE.Mesh && 
                 object.userData && 
                 object.userData.isSheetImage) {
                 
                 if (object.material) {
-                    // First set immediately to ensure consistency
-                    object.material.color.set(new THREE.Color(1, 1, 1));
-                    
-                    // Then animate to ensure smooth transition
+                    // Animate to full brightness with a smooth transition
                     gsap.to(object.material.color, {
                         r: 1.0,
                         g: 1.0,
                         b: 1.0,
-                        duration: 0.3
+                        duration: ANIMATION_DURATIONS.ZOOM_OUT_POSITION,
+                        ease: "power2.inOut"
                     });
                 }
             }
@@ -978,9 +1002,13 @@ export class ContactSheet {
             canvas.style.cursor = 'default';
         });
         
-        // Handle pointer down for initial zoom
+        // Handle pointer down for initial zoom - prevent when animating
         this.addEventListener(canvas, 'pointerdown', (event) => {
-            if (this.state === SheetState.ANIMATING) return;
+            if (this.state === SheetState.ANIMATING) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
             
             // Reset move threshold flag on pointer down
             this.hasMovedBeyondThreshold = false;
@@ -992,9 +1020,11 @@ export class ContactSheet {
             }
         });
         
-        // Handle pointer move for dragging
+        // Handle pointer move for dragging - prevent when animating
         this.addEventListener(canvas, 'pointermove', (event) => {
-            if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+            if (this.state === SheetState.ANIMATING) return;
+            
+            if (!this.isDragging || this.state !== SheetState.ZOOMED_IN) return;
             
             // Calculate distance moved to distinguish between click and drag
             if (!this.hasMovedBeyondThreshold) {
@@ -1009,9 +1039,15 @@ export class ContactSheet {
             this.handleDragging(event);
         });
         
-        // Handle pointer up for drag end or click
+        // Handle pointer up for drag end or click - prevent when animating
         this.addEventListener(canvas, 'pointerup', (event) => {
-            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+            if (this.state === SheetState.ANIMATING) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            
+            if (this.state !== SheetState.ZOOMED_IN) return;
             
             // Only consider as a drag if we moved beyond threshold
             if (this.isDragging) {
@@ -1032,11 +1068,15 @@ export class ContactSheet {
             }
         });
         
-        // Update the click handler to work on all devices
+        // Update the click handler to work on all devices - prevent when animating
         this.addEventListener(canvas, 'click', (event) => {
-            if (this.state !== SheetState.ZOOMED_IN || 
-                this.state === SheetState.ANIMATING || 
-                this.hasMovedBeyondThreshold) return;
+            if (this.state === SheetState.ANIMATING) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            
+            if (this.state !== SheetState.ZOOMED_IN || this.hasMovedBeyondThreshold) return;
             
             // Prevent default behavior and stop propagation to avoid double processing
             event.preventDefault();
@@ -1046,12 +1086,16 @@ export class ContactSheet {
             this.handleAdjacentImageClick(event);
         });
         
-        // Handle double click/tap to zoom out
+        // Handle double click/tap to zoom out - prevent when animating
         let lastTapTime = 0;
         let tapTimeout;
         
         const handleZoomOut = (event) => {
-            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING || this.isDragging) return;
+            if (this.state === SheetState.ANIMATING || this.state !== SheetState.ZOOMED_IN || this.isDragging) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
             event.preventDefault();
             this.zoomOut();
         };
@@ -1059,7 +1103,12 @@ export class ContactSheet {
         this.addEventListener(canvas, 'dblclick', handleZoomOut);
         
         this.addEventListener(canvas, 'touchend', (event) => {
-            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING || this.isDragging) return;
+            if (this.state === SheetState.ANIMATING) {
+                event.preventDefault();
+                return;
+            }
+            
+            if (this.state !== SheetState.ZOOMED_IN || this.isDragging) return;
             
             const currentTime = new Date().getTime();
             const tapLength = currentTime - lastTapTime;
@@ -1073,13 +1122,19 @@ export class ContactSheet {
             lastTapTime = currentTime;
         });
         
-        // Single tap handler for mobile navigation
+        // Single tap handler for mobile navigation - prevent when animating
         let singleTapTimer = null;
         this.addEventListener(canvas, 'touchend', (event) => {
-            if (this.state !== SheetState.ZOOMED_IN || 
-                this.state === SheetState.ANIMATING || 
-                this.hasMovedBeyondThreshold || 
-                this.isDragging) return;
+            if (this.state === SheetState.ANIMATING) {
+                event.preventDefault();
+                if (singleTapTimer) {
+                    clearTimeout(singleTapTimer);
+                    singleTapTimer = null;
+                }
+                return;
+            }
+            
+            if (this.state !== SheetState.ZOOMED_IN || this.hasMovedBeyondThreshold || this.isDragging) return;
                 
             // Get touch position
             if (event.changedTouches && event.changedTouches.length > 0) {
@@ -1094,7 +1149,9 @@ export class ContactSheet {
                 clearTimeout(singleTapTimer);
                 singleTapTimer = setTimeout(() => {
                     // If sufficient time has passed and we haven't detected a double tap
-                    if (new Date().getTime() - lastTapTime > DOUBLE_TAP_THRESHOLD) {
+                    // AND we're still not animating
+                    if (new Date().getTime() - lastTapTime > DOUBLE_TAP_THRESHOLD && 
+                        this.state !== SheetState.ANIMATING) {
                         this.handleAdjacentImageClick(touch); // Pass the touch as event
                     }
                 }, DOUBLE_TAP_THRESHOLD + 50); // Wait a bit longer than double tap threshold
@@ -1103,6 +1160,7 @@ export class ContactSheet {
         
         // Handle resize for zoomed state
         this.addEventListener(window, 'resize', () => {
+            // Allow resize events even during animation
             if (this.state === SheetState.ZOOMED_IN) {
                 const { size, aspect } = this.calculateZoomFrustum();
                 const halfSize = size / 2;
