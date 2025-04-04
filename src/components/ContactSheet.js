@@ -102,14 +102,17 @@ export class ContactSheet {
         const { size, aspect } = this.calculateZoomFrustum();
         const halfSize = size / 2;
         
+        // If we're already zoomed in, use faster animations for image-to-image movement
+        const isSubsequentMovement = this.isZoomedIn;
+        
         // Animate camera frustum
         gsap.to(this.camera, {
             left: -halfSize * aspect,
             right: halfSize * aspect,
             top: halfSize,
             bottom: -halfSize,
-            duration: 0.75,
-            ease: "power2.inOut",
+            duration: isSubsequentMovement ? 0.75 : 0.75,
+            ease: isSubsequentMovement ? "power3.inOut" : "power2.in",
             onUpdate: () => {
                 this.camera.updateProjectionMatrix();
             }
@@ -119,30 +122,33 @@ export class ContactSheet {
         gsap.to(this.camera.position, {
             x: imagePos.x,
             y: imagePos.y,
-            duration: 0.75,
-            ease: "power2.inOut"
+            duration: isSubsequentMovement ? 0.65 : 1.25,
+            ease: isSubsequentMovement ? "Expo.inOut" : "power4.inOut",
+            overwrite: false
         });
         
         this.isZoomedIn = true;
     }
     
     zoomOut() {
-        // Animate camera back to center
+        // Animate camera back to center with a quick initial movement
         gsap.to(this.camera.position, {
             x: 0,
             y: 0,
-            duration: 0.75,
-            ease: "power2.inOut"
+            duration: 0.57,
+            ease: "power3.in",
+            overwrite: false
         });
         
-        // Animate frustum back to original size
+        // Animate frustum back to original size with a slight delay
         gsap.to(this.camera, {
             left: this.originalFrustum.left,
             right: this.originalFrustum.right,
             top: this.originalFrustum.top,
             bottom: this.originalFrustum.bottom,
-            duration: 0.75,
-            ease: "power2.inOut",
+            duration: 0.85,
+            delay: 0.25,
+            ease: "power3.inOut",
             onUpdate: () => {
                 this.camera.updateProjectionMatrix();
             }
