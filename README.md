@@ -37,17 +37,18 @@ The site presents photography work through an interactive contact sheet interfac
 
 ### File Structure
 ```
-public/
-├── images/
+/
+├── images/                   (Static image assets)
 │   ├── contact-sheet-placeholder.jpg  (Background sheet)
 │   └── 600x900.jpg                    (Placeholder images)
-src/
-├── components/
-│   ├── ContactSheet.js    (Main interaction logic)
-│   └── GridLayout.js      (Grid calculations and positioning)
-├── styles/
-│   └── main.css
-└── main.js                (Application entry point)
+├── index.html                (Entry point)
+└── src/
+    ├── components/
+    │   ├── ContactSheet.js   (Main interaction logic)
+    │   └── GridLayout.js     (Grid calculations and positioning)
+    ├── styles/
+    │   └── main.css
+    └── main.js               (Application entry point)
 ```
 
 ### Module Setup
@@ -143,16 +144,15 @@ handleAdjacentImageClick(event) {
 ## Development Setup
 
 1. Clone the repository
-2. Serve the project using Live Server or similar
+2. Serve the project using Live Server or similar dev server
 3. Access via http://localhost:8080 (or configured port)
 
-## Asset Configuration
-- Ensures image assets are in `public/images/` directory
-- Uses relative paths from project root for Live Server
+## Deployment
 
-## Debug Mode
-- Stats panel for performance monitoring
-- Console logging for key operations
+This project is set up for easy deployment to Vercel:
+1. Images are stored in the `/images` directory
+2. Relative paths are used for asset loading
+3. No environment-specific configuration needed
 
 ## Next Steps
 - Create bottom navigation UI

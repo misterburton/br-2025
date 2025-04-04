@@ -28,9 +28,6 @@ export class ContactSheet {
         this.layout = new GridLayout();
         this.state = SheetState.IDLE;
         
-        // Determine image paths based on URL
-        this.configurePaths();
-        
         // Store original camera settings
         this.originalFrustum = {
             left: camera.left,
@@ -414,21 +411,12 @@ export class ContactSheet {
     async setupSheet() {
         try {
             const textureLoader = new THREE.TextureLoader();
-            const imagePath = `${this.imageBasePath}/contact-sheet-placeholder.jpg`;
-            console.log('Loading contact sheet from:', imagePath);
-            
             const sheetTexture = await new Promise((resolve, reject) => {
                 textureLoader.load(
-                    imagePath,
-                    (texture) => {
-                        console.log('Successfully loaded contact sheet');
-                        resolve(texture);
-                    },
+                    'images/contact-sheet-placeholder.jpg',
+                    (texture) => resolve(texture),
                     undefined,
-                    (error) => {
-                        console.error('Failed to load contact sheet:', error);
-                        reject(error);
-                    }
+                    (error) => reject(error)
                 );
             });
             
@@ -529,21 +517,12 @@ export class ContactSheet {
     async createPlaceholderImages() {
         try {
             const textureLoader = new THREE.TextureLoader();
-            const imagePath = `${this.imageBasePath}/600x900.jpg`;
-            console.log('Loading placeholder image from:', imagePath);
-            
             const placeholderTexture = await new Promise((resolve, reject) => {
                 textureLoader.load(
-                    imagePath,
-                    (texture) => {
-                        console.log('Successfully loaded placeholder image');
-                        resolve(texture);
-                    },
+                    'images/600x900.jpg', // Path that was working on Vercel
+                    (texture) => resolve(texture),
                     undefined,
-                    (error) => {
-                        console.error('Failed to load placeholder image:', error);
-                        reject(error);
-                    }
+                    (error) => reject(error)
                 );
             });
             
@@ -585,15 +564,13 @@ export class ContactSheet {
         // First try raycasting specifically for the placeholder image objects
         const allIntersects = this.raycaster.intersectObjects(this.scene.children);
         
-        // Store all image meshes for debugging
-        this.imageMeshes = this.scene.children.filter(child => 
+        // Get all image meshes
+        const imageMeshes = this.scene.children.filter(child => 
             child instanceof THREE.Mesh && 
             Math.abs(child.position.z + 2) < 0.1 &&
             child.material && 
             child.material.map
         );
-        
-        console.log('Available image meshes:', this.imageMeshes.length);
         
         // Check for clicks on image meshes
         const imageIntersects = allIntersects.filter(intersect => 
@@ -602,8 +579,6 @@ export class ContactSheet {
             intersect.object.material && 
             intersect.object.material.map
         );
-        
-        console.log('Image intersects found:', imageIntersects.length);
         
         let clickedImage = null;
         
@@ -614,7 +589,6 @@ export class ContactSheet {
             
             // Find row and col of the clicked image
             clickedImage = this.findNearestImage(clickedPosition.x, clickedPosition.y);
-            console.log('Found clicked image via direct intersection:', clickedImage);
         } 
         else {
             // Fallback: Use screen position to determine nearest image
@@ -625,12 +599,9 @@ export class ContactSheet {
             
             // Find the nearest image to this position
             clickedImage = this.findNearestImage(vector.x, vector.y);
-            console.log('Found clicked image via nearest position:', clickedImage);
         }
         
         if (!clickedImage) return;
-        
-        console.log('Clicked image:', clickedImage, 'Current image:', this.currentImage);
         
         // Check if the clicked image is adjacent to the current one
         const isAdjacent = 
@@ -640,8 +611,6 @@ export class ContactSheet {
             !(clickedImage.row === this.currentImage.row && 
               clickedImage.col === this.currentImage.col);
         
-        console.log('Is adjacent:', isAdjacent);
-        
         if (isAdjacent) {
             const imagePos = this.layout.getImagePosition(clickedImage.row, clickedImage.col);
             
@@ -650,34 +619,12 @@ export class ContactSheet {
             gsap.to(this.camera.position, {
                 x: imagePos.x,
                 y: imagePos.y,
-                duration: .4,
+                duration: ANIMATION_DURATIONS.SUBSEQUENT_MOVEMENT,
                 ease: "power2.out",
                 onComplete: () => {
                     this.currentImage = clickedImage;
                 }
             });
         }
-    }
-    
-    // Configure paths based on current URL
-    configurePaths() {
-        const hostname = window.location.hostname;
-        const protocol = window.location.protocol;
-        const port = window.location.port;
-        
-        // Log information for debugging
-        console.log('Environment detection:');
-        console.log('- Protocol:', protocol);
-        console.log('- Hostname:', hostname);
-        console.log('- Port:', port);
-        
-        // Determine if we're on localhost/127.0.0.1 (local dev) or deployed (Vercel)
-        const isLocalDev = hostname === 'localhost' || hostname === '127.0.0.1';
-        
-        // For local development: '/public/images'
-        // For Vercel: '/images'
-        this.imageBasePath = isLocalDev ? '/public/images' : '/images';
-        
-        console.log(`Using image base path: ${this.imageBasePath}`);
     }
 } 
