@@ -72,6 +72,8 @@ export class ContactSheet {
             await this.setupSheet();
             // Use only the image files, not additional placeholder rectangles
             await this.createImagesFromSheet();
+            // Ensure all images start at full brightness
+            this.resetImageBrightness();
             this.setupInteraction();
         } catch (error) {
             console.error('Failed to initialize contact sheet:', error);
@@ -423,6 +425,9 @@ export class ContactSheet {
             ease: "power2.out",
             onComplete: () => {
                 this.currentImage = targetImage;
+                
+                // Update brightness to highlight the new active image
+                this.setImageBrightness(targetImage.row, targetImage.col);
             }
         });
     }
@@ -457,6 +462,9 @@ export class ContactSheet {
             onComplete: () => {
                 this.currentImage = { row, col };
                 this.state = SheetState.ZOOMED_IN;
+                
+                // Set the brightness to highlight the active image
+                this.setImageBrightness(row, col);
             }
         });
         
@@ -475,6 +483,9 @@ export class ContactSheet {
     
     zoomOut() {
         this.state = SheetState.ANIMATING;
+        
+        // Reset image brightness as we zoom out
+        this.resetImageBrightness();
         
         gsap.to(this.camera.position, {
             x: 0,
@@ -691,7 +702,9 @@ export class ContactSheet {
                             // Create simple material with no special settings
                             const material = new THREE.MeshBasicMaterial({ 
                                 map: texture,
-                                side: THREE.FrontSide
+                                side: THREE.FrontSide,
+                                transparent: true, // Keep this for other potential uses
+                                color: new THREE.Color(1, 1, 1) // Start with white color multiplier
                             });
                             
                             const mesh = new THREE.Mesh(geometry, material);
@@ -875,6 +888,9 @@ export class ContactSheet {
                 ease: "power2.out",
                 onComplete: () => {
                     this.currentImage = clickedImage;
+                    
+                    // Update brightness to highlight the new active image
+                    this.setImageBrightness(clickedImage.row, clickedImage.col);
                 }
             });
         }
@@ -967,5 +983,60 @@ export class ContactSheet {
                 bottom: -halfHeight
             };
         }
+    }
+
+    // Fixed method to properly darken images with textures using color multiplier
+    setImageBrightness(activeRow, activeCol) {
+        // Find all sheet image meshes in the scene
+        this.scene.traverse(object => {
+            if (object instanceof THREE.Mesh && 
+                object.userData && 
+                object.userData.isSheetImage) {
+                
+                const { row, col } = object.userData;
+                
+                if (object.material) {
+                    // For the active image, ensure full brightness
+                    if (row === activeRow && col === activeCol) {
+                        // Active image - full brightness
+                        gsap.to(object.material.color, {
+                            r: 1.0,
+                            g: 1.0,
+                            b: 1.0,
+                            duration: 0.25
+                        });
+                    } else {
+                        // Inactive image - darken by using color as a multiplier
+                        // This preserves the image appearance better than opacity
+                        gsap.to(object.material.color, {
+                            r: 0.1,
+                            g: 0.1,
+                            b: 0.1,
+                            duration: 0.5
+                        });
+                    }
+                }
+            }
+        });
+    }
+
+    // Restore all images to full brightness
+    resetImageBrightness() {
+        this.scene.traverse(object => {
+            if (object instanceof THREE.Mesh && 
+                object.userData && 
+                object.userData.isSheetImage) {
+                
+                if (object.material) {
+                    // Animate back to full brightness
+                    gsap.to(object.material.color, {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 1.0,
+                        duration: 0.3
+                    });
+                }
+            }
+        });
     }
 } 
