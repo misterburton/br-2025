@@ -28,30 +28,16 @@ export class ContactSheet {
         this.layout = new GridLayout();
         this.state = SheetState.IDLE;
         
-        // Determine if we're in local development
-        const isLocalDev = window.location.hostname === 'localhost' || 
-                          window.location.hostname === '127.0.0.1';
+        // Automatically detect environment based on URL hostname
+        // For Vercel deployments, the hostname will include 'vercel.app' or be your custom domain
+        // For local development, it will be localhost or 127.0.0.1
+        this.isVercelDeployment = !window.location.hostname.includes('localhost') && 
+                                 !window.location.hostname.includes('127.0.0.1');
         
-        // Different paths depending on environment
-        this.getImagePath = (filename) => {
-            if (isLocalDev) {
-                // Prioritize local development paths
-                return [
-                    `/public/images/${filename}`,    // Local development with live-server
-                    `./public/images/${filename}`,   // Alternative local path
-                    `/images/${filename}`,           // Vercel path
-                    `./images/${filename}`           // Another possibility
-                ];
-            } else {
-                // Prioritize production paths
-                return [
-                    `/images/${filename}`,           // Vercel standard path
-                    `/public/images/${filename}`,    // Fallback
-                    `./public/images/${filename}`,   // Alternative fallback
-                    `./images/${filename}`           // Another possibility
-                ];
-            }
-        };
+        // Set image path based on environment
+        this.imagePath = this.isVercelDeployment ? '/images' : '/public/images';
+        console.log(`Detected environment: ${this.isVercelDeployment ? 'Vercel' : 'Local'}`);
+        console.log(`Using image path: ${this.imagePath}`);
         
         // Store original camera settings
         this.originalFrustum = {
@@ -436,42 +422,14 @@ export class ContactSheet {
     async setupSheet() {
         try {
             const textureLoader = new THREE.TextureLoader();
-            const filename = 'contact-sheet-placeholder.jpg';
-            const paths = this.getImagePath(filename);
-            
-            console.log(`Trying to load ${filename} from multiple possible paths:`, paths);
-            
-            // Try multiple paths - useful for different environments
-            const loadTexture = async (pathIndex = 0) => {
-                if (pathIndex >= paths.length) {
-                    throw new Error(`Failed to load ${filename} from any of the paths: ${paths.join(', ')}`);
-                }
-                
-                const path = paths[pathIndex];
-                console.log(`Attempt ${pathIndex + 1}/${paths.length}: Loading from ${path}`);
-                
-                try {
-                    return await new Promise((resolve, reject) => {
-                        textureLoader.load(
-                            path,
-                            (texture) => {
-                                console.log(`Successfully loaded texture from: ${path}`);
-                                resolve(texture);
-                            },
-                            undefined,
-                            (error) => {
-                                console.warn(`Failed to load from ${path}:`, error);
-                                reject(error);
-                            }
-                        );
-                    });
-                } catch (error) {
-                    console.log(`Failed with path ${path}, trying next path...`);
-                    return loadTexture(pathIndex + 1);
-                }
-            };
-            
-            const sheetTexture = await loadTexture();
+            const sheetTexture = await new Promise((resolve, reject) => {
+                textureLoader.load(
+                    `${this.imagePath}/contact-sheet-placeholder.jpg`,
+                    (texture) => resolve(texture),
+                    undefined,
+                    (error) => reject(error)
+                );
+            });
             
             const dimensions = this.layout.getSheetDimensions();
             const geometry = new THREE.PlaneGeometry(dimensions.width, dimensions.height);
@@ -570,42 +528,14 @@ export class ContactSheet {
     async createPlaceholderImages() {
         try {
             const textureLoader = new THREE.TextureLoader();
-            const filename = '600x900.jpg';
-            const paths = this.getImagePath(filename);
-            
-            console.log(`Trying to load ${filename} from multiple possible paths:`, paths);
-            
-            // Try multiple paths - useful for different environments
-            const loadTexture = async (pathIndex = 0) => {
-                if (pathIndex >= paths.length) {
-                    throw new Error(`Failed to load ${filename} from any of the paths: ${paths.join(', ')}`);
-                }
-                
-                const path = paths[pathIndex];
-                console.log(`Attempt ${pathIndex + 1}/${paths.length}: Loading from ${path}`);
-                
-                try {
-                    return await new Promise((resolve, reject) => {
-                        textureLoader.load(
-                            path,
-                            (texture) => {
-                                console.log(`Successfully loaded texture from: ${path}`);
-                                resolve(texture);
-                            },
-                            undefined,
-                            (error) => {
-                                console.warn(`Failed to load from ${path}:`, error);
-                                reject(error);
-                            }
-                        );
-                    });
-                } catch (error) {
-                    console.log(`Failed with path ${path}, trying next path...`);
-                    return loadTexture(pathIndex + 1);
-                }
-            };
-            
-            const placeholderTexture = await loadTexture();
+            const placeholderTexture = await new Promise((resolve, reject) => {
+                textureLoader.load(
+                    `${this.imagePath}/600x900.jpg`,
+                    (texture) => resolve(texture),
+                    undefined,
+                    (error) => reject(error)
+                );
+            });
             
             const imageDimensions = {
                 width: this.layout.imageWidth * this.layout.scale,
