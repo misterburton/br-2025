@@ -125,8 +125,8 @@ export class ContactSheet {
             right: halfSize * aspect,
             top: halfSize,
             bottom: -halfSize,
-            duration: isSubsequentMovement ? 0.3 : 0.75,
-            ease: isSubsequentMovement ? "power2.inOut" : "power2.in",
+            duration: isSubsequentMovement ? 0.3 : 1,
+            ease: isSubsequentMovement ? "power2.inOut" : "power2.inOut",
             onUpdate: () => {
                 this.camera.updateProjectionMatrix();
             }
@@ -182,6 +182,28 @@ export class ContactSheet {
     setupInteraction() {
         const canvas = document.querySelector('canvas');
         if (!canvas) return;
+        
+        // Handle cursor style based on hover
+        canvas.addEventListener('mousemove', (event) => {
+            if (this.isAnimating) return;
+            
+            this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            this.raycaster.setFromCamera(this.pointer, this.camera);
+            const intersects = this.raycaster.intersectObject(this.sheet);
+            
+            if (intersects.length > 0 && this.isOverImage(intersects[0].uv)) {
+                canvas.style.cursor = 'pointer';
+            } else {
+                canvas.style.cursor = 'default';
+            }
+        });
+        
+        // Reset cursor when mouse leaves canvas
+        canvas.addEventListener('mouseleave', () => {
+            canvas.style.cursor = 'default';
+        });
         
         // Handle pointer down for initial zoom
         canvas.addEventListener('pointerdown', (event) => {
