@@ -1,13 +1,31 @@
 import * as THREE from 'three';
 import { GridLayout } from './GridLayout.js';
 
+// Constants
+const DOUBLE_TAP_THRESHOLD = 300; // ms
+const SWIPE_VELOCITY_THRESHOLD = 0.3;
+const SWIPE_DISTANCE_THRESHOLD = 50; // pixels
+const ANIMATION_DURATIONS = {
+    INITIAL_ZOOM: 1,
+    SUBSEQUENT_MOVEMENT: 0.3,
+    ZOOM_OUT_POSITION: 0.57,
+    ZOOM_OUT_FRUSTUM: 0.85,
+    ZOOM_OUT_DELAY: 0.25
+};
+
+// State enum
+const SheetState = {
+    IDLE: 'idle',
+    ZOOMED_IN: 'zoomed_in',
+    ANIMATING: 'animating'
+};
+
 export class ContactSheet {
     constructor(scene, camera) {
         this.scene = scene;
         this.camera = camera;
         this.layout = new GridLayout();
-        this.isZoomedIn = false;
-        this.isAnimating = false; // Track animation state
+        this.state = SheetState.IDLE;
         
         // Store original camera settings
         this.originalFrustum = {
@@ -31,12 +49,310 @@ export class ContactSheet {
         this.lastTime = 0;
         this.velocityX = 0;
         this.velocityY = 0;
-        this.swipeDirection = null; // 'horizontal' or 'vertical'
+        this.swipeDirection = null;
+        
+        // Event listeners to be cleaned up
+        this.eventListeners = [];
     }
     
     async init() {
-        await this.setupSheet();
-        this.setupInteraction();
+        try {
+            await this.setupSheet();
+            this.setupInteraction();
+        } catch (error) {
+            console.error('Failed to initialize contact sheet:', error);
+            throw error;
+        }
+    }
+    
+    cleanup() {
+        // Remove all event listeners
+        this.eventListeners.forEach(({ element, type, handler }) => {
+            element.removeEventListener(type, handler);
+        });
+        this.eventListeners = [];
+    }
+    
+    addEventListener(element, type, handler) {
+        element.addEventListener(type, handler);
+        this.eventListeners.push({ element, type, handler });
+    }
+    
+    updatePointerPosition(event) {
+        this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        this.raycaster.setFromCamera(this.pointer, this.camera);
+    }
+    
+    getImageAtPointer() {
+        const intersects = this.raycaster.intersectObject(this.sheet);
+        if (intersects.length === 0) return null;
+        
+        const uv = intersects[0].uv;
+        if (!this.isOverImage(uv)) return null;
+        
+        const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
+        const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
+        
+        return { row: gridY, col: gridX };
+    }
+    
+    setupInteraction() {
+        const canvas = document.querySelector('canvas');
+        if (!canvas) return;
+        
+        // Handle cursor style based on hover
+        this.addEventListener(canvas, 'mousemove', (event) => {
+            if (this.state === SheetState.ANIMATING) return;
+            
+            this.updatePointerPosition(event);
+            const intersects = this.raycaster.intersectObject(this.sheet);
+            
+            canvas.style.cursor = (intersects.length > 0 && this.isOverImage(intersects[0].uv)) 
+                ? 'pointer' 
+                : 'default';
+        });
+        
+        this.addEventListener(canvas, 'mouseleave', () => {
+            canvas.style.cursor = 'default';
+        });
+        
+        // Handle pointer down for initial zoom
+        this.addEventListener(canvas, 'pointerdown', (event) => {
+            if (this.state === SheetState.ANIMATING) return;
+            
+            if (this.state === SheetState.ZOOMED_IN) {
+                this.startDragging(event);
+            } else {
+                this.handleInitialZoom(event);
+            }
+        });
+        
+        // Handle pointer move for dragging
+        this.addEventListener(canvas, 'pointermove', (event) => {
+            if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+            this.handleDragging(event);
+        });
+        
+        // Handle pointer up for drag end
+        this.addEventListener(canvas, 'pointerup', (event) => {
+            if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+            this.handleDragEnd(event);
+        });
+        
+        // Handle double click/tap to zoom out
+        let lastTapTime = 0;
+        let tapTimeout;
+        
+        const handleZoomOut = (event) => {
+            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING || this.isDragging) return;
+            event.preventDefault();
+            this.zoomOut();
+        };
+        
+        this.addEventListener(canvas, 'dblclick', handleZoomOut);
+        
+        this.addEventListener(canvas, 'touchend', (event) => {
+            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING || this.isDragging) return;
+            
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTapTime;
+            
+            clearTimeout(tapTimeout);
+            
+            if (tapLength < DOUBLE_TAP_THRESHOLD && tapLength > 0) {
+                handleZoomOut(event);
+            }
+            
+            lastTapTime = currentTime;
+        });
+        
+        // Handle resize for zoomed state
+        this.addEventListener(window, 'resize', () => {
+            if (this.state === SheetState.ZOOMED_IN) {
+                const { size, aspect } = this.calculateZoomFrustum();
+                const halfSize = size / 2;
+                
+                this.camera.left = -halfSize * aspect;
+                this.camera.right = halfSize * aspect;
+                this.camera.top = halfSize;
+                this.camera.bottom = -halfSize;
+                this.camera.updateProjectionMatrix();
+            }
+        });
+    }
+    
+    startDragging(event) {
+        this.isDragging = true;
+        this.startX = event.clientX;
+        this.startY = event.clientY;
+        this.lastX = this.startX;
+        this.lastY = this.startY;
+        this.lastTime = performance.now();
+        this.velocityX = 0;
+        this.velocityY = 0;
+        this.swipeDirection = null;
+        event.preventDefault();
+        
+        // Set grabbing cursor
+        const canvas = document.querySelector('canvas');
+        if (canvas) {
+            canvas.style.cursor = 'grabbing';
+        }
+    }
+    
+    handleInitialZoom(event) {
+        event.preventDefault();
+        this.updatePointerPosition(event);
+        
+        const image = this.getImageAtPointer();
+        if (image) {
+            const imagePos = this.layout.getImagePosition(image.row, image.col);
+            this.zoomToImage(imagePos, image.row, image.col);
+        }
+    }
+    
+    handleDragging(event) {
+        const currentTime = performance.now();
+        const deltaTime = currentTime - this.lastTime;
+        
+        this.velocityX = (event.clientX - this.lastX) / deltaTime;
+        this.velocityY = (event.clientY - this.lastY) / deltaTime;
+        
+        if (!this.swipeDirection) {
+            const deltaX = Math.abs(event.clientX - this.startX);
+            const deltaY = Math.abs(event.clientY - this.startY);
+            this.swipeDirection = deltaX > deltaY ? 'horizontal' : 'vertical';
+        }
+        
+        const scale = (this.camera.top - this.camera.bottom) / window.innerHeight;
+        const deltaX = (event.clientX - this.lastX) * scale;
+        const deltaY = (event.clientY - this.lastY) * scale;
+        
+        if (this.swipeDirection === 'horizontal') {
+            this.camera.position.x -= deltaX;
+        } else {
+            this.camera.position.y += deltaY;
+        }
+        
+        this.lastX = event.clientX;
+        this.lastY = event.clientY;
+        this.lastTime = currentTime;
+    }
+    
+    handleDragEnd(event) {
+        this.isDragging = false;
+        
+        // Reset cursor based on whether we're over an image
+        const canvas = document.querySelector('canvas');
+        if (canvas) {
+            this.updatePointerPosition(event);
+            const intersects = this.raycaster.intersectObject(this.sheet);
+            canvas.style.cursor = (intersects.length > 0 && this.isOverImage(intersects[0].uv)) 
+                ? 'pointer' 
+                : 'default';
+        }
+        
+        const totalDeltaX = event.clientX - this.startX;
+        const totalDeltaY = event.clientY - this.startY;
+        
+        let targetImage = { ...this.currentImage };
+        
+        if (this.swipeDirection === 'horizontal') {
+            const shouldMove = Math.abs(this.velocityX) > SWIPE_VELOCITY_THRESHOLD || Math.abs(totalDeltaX) > SWIPE_DISTANCE_THRESHOLD;
+            if (shouldMove) {
+                if (this.velocityX > 0 || totalDeltaX > 0) {
+                    targetImage.col = Math.max(0, this.currentImage.col - 1);
+                } else {
+                    targetImage.col = Math.min(this.layout.columns - 1, this.currentImage.col + 1);
+                }
+            }
+        } else {
+            const shouldMove = Math.abs(this.velocityY) > SWIPE_VELOCITY_THRESHOLD || Math.abs(totalDeltaY) > SWIPE_DISTANCE_THRESHOLD;
+            if (shouldMove) {
+                if (this.velocityY > 0 || totalDeltaY > 0) {
+                    targetImage.row = Math.max(0, this.currentImage.row - 1);
+                } else {
+                    targetImage.row = Math.min(this.layout.rows - 1, this.currentImage.row + 1);
+                }
+            }
+        }
+        
+        const imagePos = this.layout.getImagePosition(targetImage.row, targetImage.col);
+        
+        gsap.killTweensOf(this.camera.position);
+        
+        gsap.to(this.camera.position, {
+            x: imagePos.x,
+            y: imagePos.y,
+            duration: ANIMATION_DURATIONS.SUBSEQUENT_MOVEMENT,
+            ease: "power2.out",
+            onComplete: () => {
+                this.currentImage = targetImage;
+            }
+        });
+    }
+    
+    zoomToImage(imagePos, row, col) {
+        const { size, aspect } = this.calculateZoomFrustum();
+        const halfSize = size / 2;
+        
+        const isSubsequentMovement = this.state === SheetState.ZOOMED_IN;
+        this.state = SheetState.ANIMATING;
+        
+        // Animate camera frustum
+        gsap.to(this.camera, {
+            left: -halfSize * aspect,
+            right: halfSize * aspect,
+            top: halfSize,
+            bottom: -halfSize,
+            duration: isSubsequentMovement ? 0.3 : 1,
+            ease: isSubsequentMovement ? "power2.inOut" : "power2.inOut",
+            onUpdate: () => {
+                this.camera.updateProjectionMatrix();
+            }
+        });
+        
+        // Animate camera position
+        gsap.to(this.camera.position, {
+            x: imagePos.x,
+            y: imagePos.y,
+            duration: isSubsequentMovement ? 0.5 : 1.5,
+            ease: isSubsequentMovement ? "power2.inOut" : "power4.inOut",
+            overwrite: false,
+            onComplete: () => {
+                this.currentImage = { row, col };
+                this.state = SheetState.ZOOMED_IN;
+            }
+        });
+    }
+    
+    zoomOut() {
+        this.state = SheetState.ANIMATING;
+        
+        gsap.to(this.camera.position, {
+            x: 0,
+            y: 0,
+            duration: ANIMATION_DURATIONS.ZOOM_OUT_POSITION,
+            ease: "power3.in",
+            overwrite: false
+        });
+        
+        gsap.to(this.camera, {
+            left: this.originalFrustum.left,
+            right: this.originalFrustum.right,
+            top: this.originalFrustum.top,
+            bottom: this.originalFrustum.bottom,
+            duration: ANIMATION_DURATIONS.ZOOM_OUT_FRUSTUM,
+            delay: ANIMATION_DURATIONS.ZOOM_OUT_DELAY,
+            ease: "power3.inOut",
+            onUpdate: () => {
+                this.camera.updateProjectionMatrix();
+            },
+            onComplete: () => {
+                this.state = SheetState.IDLE;
+            }
+        });
     }
     
     async setupSheet() {
@@ -108,273 +424,6 @@ export class ContactSheet {
             size: frustumSize,
             aspect: window.innerWidth / window.innerHeight
         };
-    }
-    
-    zoomToImage(imagePos, row, col) {
-        const { size, aspect } = this.calculateZoomFrustum();
-        const halfSize = size / 2;
-        
-        // If we're already zoomed in, use faster animations for image-to-image movement
-        const isSubsequentMovement = this.isZoomedIn;
-        
-        this.isAnimating = true;
-        
-        // Animate camera frustum
-        gsap.to(this.camera, {
-            left: -halfSize * aspect,
-            right: halfSize * aspect,
-            top: halfSize,
-            bottom: -halfSize,
-            duration: isSubsequentMovement ? 0.3 : 1,
-            ease: isSubsequentMovement ? "power2.inOut" : "power2.inOut",
-            onUpdate: () => {
-                this.camera.updateProjectionMatrix();
-            }
-        });
-        
-        // Animate camera position
-        gsap.to(this.camera.position, {
-            x: imagePos.x,
-            y: imagePos.y,
-            duration: isSubsequentMovement ? 0.5 : 1.5,
-            ease: isSubsequentMovement ? "power2.inOut" : "power4.inOut",
-            overwrite: false,
-            onComplete: () => {
-                this.currentImage = { row, col };
-                this.isAnimating = false;
-            }
-        });
-        
-        this.isZoomedIn = true;
-    }
-    
-    zoomOut() {
-        this.isAnimating = true;
-        
-        // Animate camera back to center with a quick initial movement
-        gsap.to(this.camera.position, {
-            x: 0,
-            y: 0,
-            duration: 0.57,
-            ease: "power3.in",
-            overwrite: false
-        });
-        
-        // Animate frustum back to original size with a slight delay
-        gsap.to(this.camera, {
-            left: this.originalFrustum.left,
-            right: this.originalFrustum.right,
-            top: this.originalFrustum.top,
-            bottom: this.originalFrustum.bottom,
-            duration: 0.85,
-            delay: 0.25,
-            ease: "power3.inOut",
-            onUpdate: () => {
-                this.camera.updateProjectionMatrix();
-            },
-            onComplete: () => {
-                this.isZoomedIn = false;
-                this.isAnimating = false;
-            }
-        });
-    }
-    
-    setupInteraction() {
-        const canvas = document.querySelector('canvas');
-        if (!canvas) return;
-        
-        // Handle cursor style based on hover
-        canvas.addEventListener('mousemove', (event) => {
-            if (this.isAnimating) return;
-            
-            this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            
-            this.raycaster.setFromCamera(this.pointer, this.camera);
-            const intersects = this.raycaster.intersectObject(this.sheet);
-            
-            if (intersects.length > 0 && this.isOverImage(intersects[0].uv)) {
-                canvas.style.cursor = 'pointer';
-            } else {
-                canvas.style.cursor = 'default';
-            }
-        });
-        
-        // Reset cursor when mouse leaves canvas
-        canvas.addEventListener('mouseleave', () => {
-            canvas.style.cursor = 'default';
-        });
-        
-        // Handle pointer down for initial zoom
-        canvas.addEventListener('pointerdown', (event) => {
-            if (this.isAnimating) return;
-            
-            if (this.isZoomedIn) {
-                // Start dragging
-                this.isDragging = true;
-                this.startX = event.clientX;
-                this.startY = event.clientY;
-                this.lastX = this.startX;
-                this.lastY = this.startY;
-                this.lastTime = performance.now();
-                this.velocityX = 0;
-                this.velocityY = 0;
-                this.swipeDirection = null;
-                event.preventDefault();
-            } else {
-                // Handle zoom
-                event.preventDefault();
-                
-                this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-                this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-                
-                this.raycaster.setFromCamera(this.pointer, this.camera);
-                const intersects = this.raycaster.intersectObject(this.sheet);
-                
-                if (intersects.length > 0 && this.isOverImage(intersects[0].uv)) {
-                    const uv = intersects[0].uv;
-                    const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
-                    const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
-                    
-                    const imagePos = this.layout.getImagePosition(gridY, gridX);
-                    this.zoomToImage(imagePos, gridY, gridX);
-                }
-            }
-        });
-        
-        // Handle pointer move for dragging
-        canvas.addEventListener('pointermove', (event) => {
-            if (!this.isDragging || !this.isZoomedIn || this.isAnimating) return;
-            
-            const currentTime = performance.now();
-            const deltaTime = currentTime - this.lastTime;
-            
-            // Calculate velocity
-            this.velocityX = (event.clientX - this.lastX) / deltaTime;
-            this.velocityY = (event.clientY - this.lastY) / deltaTime;
-            
-            // Determine swipe direction on first move
-            if (!this.swipeDirection) {
-                const deltaX = Math.abs(event.clientX - this.startX);
-                const deltaY = Math.abs(event.clientY - this.startY);
-                this.swipeDirection = deltaX > deltaY ? 'horizontal' : 'vertical';
-            }
-            
-            // Convert screen coordinates to world coordinates
-            const scale = (this.camera.top - this.camera.bottom) / window.innerHeight;
-            const deltaX = (event.clientX - this.lastX) * scale;
-            const deltaY = (event.clientY - this.lastY) * scale;
-            
-            // Update camera position based on swipe direction
-            if (this.swipeDirection === 'horizontal') {
-                this.camera.position.x -= deltaX;
-            } else {
-                this.camera.position.y += deltaY;
-            }
-            
-            // Store last position and time
-            this.lastX = event.clientX;
-            this.lastY = event.clientY;
-            this.lastTime = currentTime;
-        });
-        
-        // Handle pointer up for drag end
-        canvas.addEventListener('pointerup', (event) => {
-            if (!this.isDragging || !this.isZoomedIn || this.isAnimating) return;
-            
-            this.isDragging = false;
-            
-            // Calculate total swipe distance
-            const totalDeltaX = event.clientX - this.startX;
-            const totalDeltaY = event.clientY - this.startY;
-            
-            // Find target image - only move one image at a time
-            let targetImage = { ...this.currentImage };
-            
-            if (this.swipeDirection === 'horizontal') {
-                // Check velocity and distance to determine direction
-                const shouldMove = Math.abs(this.velocityX) > 0.3 || Math.abs(totalDeltaX) > 50;
-                if (shouldMove) {
-                    if (this.velocityX > 0 || totalDeltaX > 0) { // Swipe right
-                        targetImage.col = Math.max(0, this.currentImage.col - 1);
-                    } else { // Swipe left
-                        targetImage.col = Math.min(this.layout.columns - 1, this.currentImage.col + 1);
-                    }
-                }
-            } else {
-                // Check velocity and distance to determine direction
-                const shouldMove = Math.abs(this.velocityY) > 0.3 || Math.abs(totalDeltaY) > 50;
-                if (shouldMove) {
-                    if (this.velocityY > 0 || totalDeltaY > 0) { // Swipe down
-                        targetImage.row = Math.max(0, this.currentImage.row - 1);
-                    } else { // Swipe up
-                        targetImage.row = Math.min(this.layout.rows - 1, this.currentImage.row + 1);
-                    }
-                }
-            }
-            
-            const imagePos = this.layout.getImagePosition(targetImage.row, targetImage.col);
-            
-            // Animate to target image with momentum
-            const duration = 0.3;
-            const ease = "power2.out";
-            
-            // Kill any existing animations
-            gsap.killTweensOf(this.camera.position);
-            
-            gsap.to(this.camera.position, {
-                x: imagePos.x,
-                y: imagePos.y,
-                duration: duration,
-                ease: ease,
-                onComplete: () => {
-                    this.currentImage = targetImage;
-                }
-            });
-        });
-        
-        // Handle double click/tap to zoom out
-        let lastTapTime = 0;
-        let tapTimeout;
-        
-        const handleZoomOut = (event) => {
-            if (!this.isZoomedIn || this.isAnimating) return;
-            event.preventDefault();
-            this.zoomOut();
-        };
-        
-        // Desktop double click
-        canvas.addEventListener('dblclick', handleZoomOut);
-        
-        // Mobile double tap
-        canvas.addEventListener('touchend', (event) => {
-            if (!this.isZoomedIn || this.isAnimating) return;
-            
-            const currentTime = new Date().getTime();
-            const tapLength = currentTime - lastTapTime;
-            
-            clearTimeout(tapTimeout);
-            
-            if (tapLength < 300 && tapLength > 0) {
-                handleZoomOut(event);
-            }
-            
-            lastTapTime = currentTime;
-        });
-        
-        // Handle resize for zoomed state
-        window.addEventListener('resize', () => {
-            if (this.isZoomedIn) {
-                const { size, aspect } = this.calculateZoomFrustum();
-                const halfSize = size / 2;
-                
-                this.camera.left = -halfSize * aspect;
-                this.camera.right = halfSize * aspect;
-                this.camera.top = halfSize;
-                this.camera.bottom = -halfSize;
-                this.camera.updateProjectionMatrix();
-            }
-        });
     }
     
     calculateBounds() {
