@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 import { GridLayout } from './GridLayout.js';
+import { setupSheetInteraction, SheetState } from './SheetInteraction.js';
+import { ImageLoader } from './ImageLoader.js';
+import { SheetAnimation } from './SheetAnimation.js';
+import { ResourceManager, clearExistingImageMeshes } from './ResourceManagement.js';
+import * as SheetUtils from './SheetUtils.js';
 
 // Constants
 const DOUBLE_TAP_THRESHOLD = 300; // ms
@@ -12,13 +17,6 @@ const ANIMATION_DURATIONS = {
     ZOOM_OUT_POSITION: 0.57,
     ZOOM_OUT_FRUSTUM: 0.85,
     ZOOM_OUT_DELAY: 0.25
-};
-
-// State enum
-const SheetState = {
-    IDLE: 'idle',
-    ZOOMED_IN: 'zoomed_in',
-    ANIMATING: 'animating'
 };
 
 export class ContactSheet {
@@ -66,8 +64,17 @@ export class ContactSheet {
         
         // Event listeners to be cleaned up
         this.eventListeners = [];
+        
+        // Initialize helper classes
+        this.imageLoader = new ImageLoader();
+        this.animation = new SheetAnimation(camera, gradientBackground);
+        this.resourceManager = new ResourceManager();
+        
+        // Sheet Z position constant
+        this.SHEET_Z_POSITION = -2.5;
     }
     
+    // Main initialization method
     async init() {
         try {
             await this.setupSheet();
@@ -75,7 +82,8 @@ export class ContactSheet {
             await this.createImagesFromSheet();
             // Ensure all images start at full brightness
             this.resetImageBrightness();
-            this.setupInteraction();
+            // We're using setupSheetInteraction from the external module, not the local setupInteraction
+            setupSheetInteraction(this);
         } catch (error) {
             console.error('Failed to initialize contact sheet:', error);
             throw error;
@@ -171,167 +179,7 @@ export class ContactSheet {
         return { row: gridY, col: gridX };
     }
     
-    setupInteraction() {
-        const canvas = document.querySelector('canvas');
-        if (!canvas) return;
-        
-        // Add click flag to track if we've dragged past threshold
-        this.hasMovedBeyondThreshold = false;
-        
-        // Handle cursor style based on hover
-        this.addEventListener(canvas, 'mousemove', (event) => {
-            if (this.state === SheetState.ANIMATING) return;
-            
-            this.updatePointerPosition(event);
-            const intersects = this.raycaster.intersectObject(this.sheet);
-            
-            canvas.style.cursor = (intersects.length > 0 && this.isOverImage(intersects[0].uv)) 
-                ? 'pointer' 
-                : 'default';
-        });
-        
-        this.addEventListener(canvas, 'mouseleave', () => {
-            canvas.style.cursor = 'default';
-        });
-        
-        // Handle pointer down for initial zoom
-        this.addEventListener(canvas, 'pointerdown', (event) => {
-            if (this.state === SheetState.ANIMATING) return;
-            
-            // Reset move threshold flag on pointer down
-            this.hasMovedBeyondThreshold = false;
-            
-            if (this.state === SheetState.ZOOMED_IN) {
-                this.startDragging(event);
-            } else {
-                this.handleInitialZoom(event);
-            }
-        });
-        
-        // Handle pointer move for dragging
-        this.addEventListener(canvas, 'pointermove', (event) => {
-            if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
-            
-            // Calculate distance moved to distinguish between click and drag
-            if (!this.hasMovedBeyondThreshold) {
-                const deltaX = Math.abs(event.clientX - this.startX);
-                const deltaY = Math.abs(event.clientY - this.startY);
-                
-                if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
-                    this.hasMovedBeyondThreshold = true;
-                }
-            }
-            
-            this.handleDragging(event);
-        });
-        
-        // Handle pointer up for drag end or click
-        this.addEventListener(canvas, 'pointerup', (event) => {
-            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
-            
-            // Only consider as a drag if we moved beyond threshold
-            if (this.isDragging) {
-                if (this.hasMovedBeyondThreshold) {
-                    this.handleDragEnd(event);
-                } else {
-                    // If we didn't move beyond threshold, treat as a click instead
-                    this.isDragging = false;
-                    
-                    // Reset cursor
-                    if (canvas) {
-                        canvas.style.cursor = 'default';
-                    }
-                    
-                    // Handle as a click regardless of device type
-                    this.handleAdjacentImageClick(event);
-                }
-            }
-        });
-        
-        // Update the click handler to work on all devices
-        this.addEventListener(canvas, 'click', (event) => {
-            if (this.state !== SheetState.ZOOMED_IN || 
-                this.state === SheetState.ANIMATING || 
-                this.hasMovedBeyondThreshold) return;
-            
-            // Prevent default behavior and stop propagation to avoid double processing
-            event.preventDefault();
-            event.stopPropagation();
-            
-            // Handle clicks regardless of device type
-            this.handleAdjacentImageClick(event);
-        });
-        
-        // Handle double click/tap to zoom out
-        let lastTapTime = 0;
-        let tapTimeout;
-        
-        const handleZoomOut = (event) => {
-            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING || this.isDragging) return;
-            event.preventDefault();
-            this.zoomOut();
-        };
-        
-        this.addEventListener(canvas, 'dblclick', handleZoomOut);
-        
-        this.addEventListener(canvas, 'touchend', (event) => {
-            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING || this.isDragging) return;
-            
-            const currentTime = new Date().getTime();
-            const tapLength = currentTime - lastTapTime;
-            
-            clearTimeout(tapTimeout);
-            
-            if (tapLength < DOUBLE_TAP_THRESHOLD && tapLength > 0) {
-                handleZoomOut(event);
-            }
-            
-            lastTapTime = currentTime;
-        });
-        
-        // Single tap handler for mobile navigation
-        let singleTapTimer = null;
-        this.addEventListener(canvas, 'touchend', (event) => {
-            if (this.state !== SheetState.ZOOMED_IN || 
-                this.state === SheetState.ANIMATING || 
-                this.hasMovedBeyondThreshold || 
-                this.isDragging) return;
-                
-            // Get touch position
-            if (event.changedTouches && event.changedTouches.length > 0) {
-                const touch = event.changedTouches[0];
-                
-                // Convert touch position to pointer position for raycasting
-                this.pointer.x = (touch.clientX / window.innerWidth) * 2 - 1;
-                this.pointer.y = -(touch.clientY / window.innerHeight) * 2 + 1;
-                this.raycaster.setFromCamera(this.pointer, this.camera);
-                
-                // Delay handling the tap to allow for potential double tap
-                clearTimeout(singleTapTimer);
-                singleTapTimer = setTimeout(() => {
-                    // If sufficient time has passed and we haven't detected a double tap
-                    if (new Date().getTime() - lastTapTime > DOUBLE_TAP_THRESHOLD) {
-                        this.handleAdjacentImageClick(touch); // Pass the touch as event
-                    }
-                }, DOUBLE_TAP_THRESHOLD + 50); // Wait a bit longer than double tap threshold
-            }
-        });
-        
-        // Handle resize for zoomed state
-        this.addEventListener(window, 'resize', () => {
-            if (this.state === SheetState.ZOOMED_IN) {
-                const { size, aspect } = this.calculateZoomFrustum();
-                const halfSize = size / 2;
-                
-                this.camera.left = -halfSize * aspect;
-                this.camera.right = halfSize * aspect;
-                this.camera.top = halfSize;
-                this.camera.bottom = -halfSize;
-                this.camera.updateProjectionMatrix();
-            }
-        });
-    }
-    
+    // Start dragging the sheet
     startDragging(event) {
         this.isDragging = true;
         this.startX = event.clientX;
@@ -351,6 +199,7 @@ export class ContactSheet {
         }
     }
     
+    // Handle initial zoom into an image
     handleInitialZoom(event) {
         event.preventDefault();
         this.updatePointerPosition(event);
@@ -362,6 +211,7 @@ export class ContactSheet {
         }
     }
     
+    // Handle dragging while zoomed in
     handleDragging(event) {
         const currentTime = performance.now();
         const deltaTime = currentTime - this.lastTime;
@@ -402,6 +252,7 @@ export class ContactSheet {
         this.lastTime = currentTime;
     }
     
+    // Handle drag end, possibly transitioning to next image
     handleDragEnd(event) {
         this.isDragging = false;
         
@@ -461,107 +312,88 @@ export class ContactSheet {
         });
     }
     
-    zoomToImage(imagePos, row, col) {
-        const { size, aspect } = this.calculateZoomFrustum();
-        const halfSize = size / 2;
+    // Handle clicking on an adjacent image when zoomed in
+    handleAdjacentImageClick(event) {
+        // Prevent multiple navigations in quick succession
+        if (this.isNavigating) return;
         
-        const isSubsequentMovement = this.state === SheetState.ZOOMED_IN;
-        this.state = SheetState.ANIMATING;
+        // Update pointer position
+        this.updatePointerPosition(event);
         
-        // Animate camera frustum
-        gsap.to(this.camera, {
-            left: -halfSize * aspect,
-            right: halfSize * aspect,
-            top: halfSize,
-            bottom: -halfSize,
-            duration: isSubsequentMovement ? 0.3 : 1,
-            ease: isSubsequentMovement ? "power2.inOut" : "power2.inOut",
-            onUpdate: () => {
-                this.camera.updateProjectionMatrix();
-            }
-        });
+        // First try raycasting specifically for the placeholder image objects
+        const allIntersects = this.raycaster.intersectObjects(this.scene.children);
         
-        // Animate camera position
-        gsap.to(this.camera.position, {
-            x: imagePos.x,
-            y: imagePos.y,
-            duration: isSubsequentMovement ? 0.5 : 1.5,
-            ease: isSubsequentMovement ? "power2.inOut" : "power4.inOut",
-            overwrite: false,
-            onComplete: () => {
-                this.currentImage = { row, col };
-                this.state = SheetState.ZOOMED_IN;
-                
-                // Set the brightness to highlight the active image
-                this.setImageBrightness(row, col);
-            }
-        });
+        // Get all image meshes - update the Z position check to match our new position
+        const imageMeshes = this.scene.children.filter(child => 
+            child instanceof THREE.Mesh && 
+            Math.abs(child.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 &&
+            child.material && 
+            child.material.map
+        );
         
-        // Animate gradient background with parallax effect
-        if (this.gradientBackground) {
-            const parallaxFactor = 0.15; // Reduced for subtler effect
-            gsap.to(this.gradientBackground.position, {
-                x: imagePos.x * parallaxFactor,
-                y: imagePos.y * parallaxFactor,
-                duration: isSubsequentMovement ? 0.7 : 1.8,
-                ease: isSubsequentMovement ? "power2.inOut" : "power3.inOut",
-                overwrite: false
-            });
+        // Check for clicks on image meshes - update Z position check
+        const imageIntersects = allIntersects.filter(intersect => 
+            intersect.object instanceof THREE.Mesh &&
+            Math.abs(intersect.object.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 && 
+            intersect.object.material && 
+            intersect.object.material.map
+        );
+        
+        let clickedImage = null;
+        
+        if (imageIntersects.length > 0) {
+            // Find which image was clicked based on the position
+            const clickedObject = imageIntersects[0].object;
+            const clickedPosition = clickedObject.position;
+            
+            // Find row and col of the clicked image
+            clickedImage = this.findNearestImage(clickedPosition.x, clickedPosition.y);
+        } 
+        else {
+            // Fallback: Use screen position to determine nearest image
+            // Convert screen to world coordinates
+            const vector = new THREE.Vector3();
+            vector.set(this.pointer.x, this.pointer.y, 0.5);
+            vector.unproject(this.camera);
+            
+            // Find the nearest image to this position
+            clickedImage = this.findNearestImage(vector.x, vector.y);
         }
-    }
-    
-    zoomOut() {
-        this.state = SheetState.ANIMATING;
         
-        // Reset image brightness as we zoom out
-        this.resetImageBrightness();
+        if (!clickedImage) return;
         
-        gsap.to(this.camera.position, {
-            x: 0,
-            y: 0,
-            duration: ANIMATION_DURATIONS.ZOOM_OUT_POSITION,
-            ease: "power3.in",
-            overwrite: false
-        });
+        // Check if the clicked image is adjacent to the current one
+        const isAdjacent = 
+            (Math.abs(clickedImage.row - this.currentImage.row) <= 1 &&
+             Math.abs(clickedImage.col - this.currentImage.col) <= 1) &&
+            // Exclude clicking on the current image
+            !(clickedImage.row === this.currentImage.row && 
+              clickedImage.col === this.currentImage.col);
         
-        // Recalculate the correct frustum based on current aspect ratio
-        const aspect = window.innerWidth / window.innerHeight;
-        const frustumSize = aspect > 1 ? 4 : 4 / aspect;
-        const halfHeight = frustumSize / 2;
-        const halfWidth = frustumSize * aspect / 2;
-        
-        gsap.to(this.camera, {
-            left: -halfWidth,
-            right: halfWidth,
-            top: halfHeight,
-            bottom: -halfHeight,
-            duration: ANIMATION_DURATIONS.ZOOM_OUT_FRUSTUM,
-            delay: ANIMATION_DURATIONS.ZOOM_OUT_DELAY,
-            ease: "power3.inOut",
-            onUpdate: () => {
-                this.camera.updateProjectionMatrix();
-            },
-            onComplete: () => {
-                // Update the stored original frustum with the current values
-                this.originalFrustum = {
-                    left: -halfWidth,
-                    right: halfWidth,
-                    top: halfHeight,
-                    bottom: -halfHeight
-                };
-                this.state = SheetState.IDLE;
-            }
-        });
-        
-        // Reset gradient background position
-        if (this.gradientBackground) {
-            gsap.to(this.gradientBackground.position, {
-                x: 0,
-                y: 0,
-                duration: ANIMATION_DURATIONS.ZOOM_OUT_FRUSTUM * 1.2,
-                delay: ANIMATION_DURATIONS.ZOOM_OUT_DELAY * 0.5,
+        if (isAdjacent) {
+            const imagePos = this.layout.getImagePosition(clickedImage.row, clickedImage.col);
+            
+            gsap.killTweensOf(this.camera.position);
+            
+            // Set navigating flag to prevent double navigation
+            this.isNavigating = true;
+            
+            gsap.to(this.camera.position, {
+                x: imagePos.x,
+                y: imagePos.y,
+                duration: ANIMATION_DURATIONS.SUBSEQUENT_MOVEMENT,
                 ease: "power2.out",
-                overwrite: false
+                onComplete: () => {
+                    this.currentImage = clickedImage;
+                    
+                    // Update brightness to highlight the new active image
+                    this.setImageBrightness(clickedImage.row, clickedImage.col);
+                    
+                    // Reset navigation flag after animation completes
+                    setTimeout(() => {
+                        this.isNavigating = false;
+                    }, 100);
+                }
             });
         }
     }
@@ -689,6 +521,114 @@ export class ContactSheet {
         return { row: nearestRow, col: nearestCol };
     }
     
+    // Zoom to a specific image
+    zoomToImage(imagePos, row, col) {
+        const { size, aspect } = this.calculateZoomFrustum();
+        const halfSize = size / 2;
+        
+        const isSubsequentMovement = this.state === SheetState.ZOOMED_IN;
+        this.state = SheetState.ANIMATING;
+        
+        // Animate camera frustum
+        gsap.to(this.camera, {
+            left: -halfSize * aspect,
+            right: halfSize * aspect,
+            top: halfSize,
+            bottom: -halfSize,
+            duration: isSubsequentMovement ? 0.3 : 1,
+            ease: isSubsequentMovement ? "power2.inOut" : "power2.inOut",
+            onUpdate: () => {
+                this.camera.updateProjectionMatrix();
+            }
+        });
+        
+        // Animate camera position
+        gsap.to(this.camera.position, {
+            x: imagePos.x,
+            y: imagePos.y,
+            duration: isSubsequentMovement ? 0.5 : 1.5,
+            ease: isSubsequentMovement ? "power2.inOut" : "power4.inOut",
+            overwrite: false,
+            onComplete: () => {
+                this.currentImage = { row, col };
+                this.state = SheetState.ZOOMED_IN;
+                
+                // Set the brightness to highlight the active image
+                this.setImageBrightness(row, col);
+            }
+        });
+        
+        // Animate gradient background with parallax effect
+        if (this.gradientBackground) {
+            const parallaxFactor = 0.15; // Reduced for subtler effect
+            gsap.to(this.gradientBackground.position, {
+                x: imagePos.x * parallaxFactor,
+                y: imagePos.y * parallaxFactor,
+                duration: isSubsequentMovement ? 0.7 : 1.8,
+                ease: isSubsequentMovement ? "power2.inOut" : "power3.inOut",
+                overwrite: false
+            });
+        }
+    }
+    
+    // Zoom out to show the entire sheet
+    zoomOut() {
+        this.state = SheetState.ANIMATING;
+        
+        // Reset image brightness as we zoom out
+        this.resetImageBrightness();
+        
+        gsap.to(this.camera.position, {
+            x: 0,
+            y: 0,
+            duration: ANIMATION_DURATIONS.ZOOM_OUT_POSITION,
+            ease: "power3.in",
+            overwrite: false
+        });
+        
+        // Recalculate the correct frustum based on current aspect ratio
+        const aspect = window.innerWidth / window.innerHeight;
+        const frustumSize = aspect > 1 ? 4 : 4 / aspect;
+        const halfHeight = frustumSize / 2;
+        const halfWidth = frustumSize * aspect / 2;
+        
+        gsap.to(this.camera, {
+            left: -halfWidth,
+            right: halfWidth,
+            top: halfHeight,
+            bottom: -halfHeight,
+            duration: ANIMATION_DURATIONS.ZOOM_OUT_FRUSTUM,
+            delay: ANIMATION_DURATIONS.ZOOM_OUT_DELAY,
+            ease: "power3.inOut",
+            onUpdate: () => {
+                this.camera.updateProjectionMatrix();
+            },
+            onComplete: () => {
+                // Update the stored original frustum with the current values
+                this.originalFrustum = {
+                    left: -halfWidth,
+                    right: halfWidth,
+                    top: halfHeight,
+                    bottom: -halfHeight
+                };
+                this.state = SheetState.IDLE;
+            }
+        });
+        
+        // Reset gradient background position
+        if (this.gradientBackground) {
+            gsap.to(this.gradientBackground.position, {
+                x: 0,
+                y: 0,
+                duration: ANIMATION_DURATIONS.ZOOM_OUT_FRUSTUM * 1.2,
+                delay: ANIMATION_DURATIONS.ZOOM_OUT_DELAY * 0.5,
+                ease: "power2.out",
+                overwrite: false
+            });
+        }
+    }
+    
+    // Create images from sheet
     async createImagesFromSheet() {
         try {
             // Get list of image filenames for the current sheet
@@ -852,89 +792,112 @@ export class ContactSheet {
         return window.innerWidth >= 768;
     }
     
-    handleAdjacentImageClick(event) {
-        // Prevent multiple navigations in quick succession
-        if (this.isNavigating) return;
+    // Update camera frustum on window resize
+    handleResize() {
+        // Always recalculate the correct frustum based on current aspect ratio
+        const aspect = window.innerWidth / window.innerHeight;
+        const frustumSize = aspect > 1 ? 4 : 4 / aspect;
+        const halfHeight = frustumSize / 2;
+        const halfWidth = frustumSize * aspect / 2;
         
-        // Update pointer position
-        this.updatePointerPosition(event);
-        
-        // First try raycasting specifically for the placeholder image objects
-        const allIntersects = this.raycaster.intersectObjects(this.scene.children);
-        
-        // Get all image meshes - update the Z position check to match our new position
-        const imageMeshes = this.scene.children.filter(child => 
-            child instanceof THREE.Mesh && 
-            Math.abs(child.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 &&
-            child.material && 
-            child.material.map
-        );
-        
-        // Check for clicks on image meshes - update Z position check
-        const imageIntersects = allIntersects.filter(intersect => 
-            intersect.object instanceof THREE.Mesh &&
-            Math.abs(intersect.object.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 && 
-            intersect.object.material && 
-            intersect.object.material.map
-        );
-        
-        let clickedImage = null;
-        
-        if (imageIntersects.length > 0) {
-            // Find which image was clicked based on the position
-            const clickedObject = imageIntersects[0].object;
-            const clickedPosition = clickedObject.position;
+        // If we're not zoomed in, update the camera immediately
+        if (this.state !== SheetState.ZOOMED_IN) {
+            this.camera.left = -halfWidth;
+            this.camera.right = halfWidth;
+            this.camera.top = halfHeight;
+            this.camera.bottom = -halfHeight;
+            this.camera.updateProjectionMatrix();
             
-            // Find row and col of the clicked image
-            clickedImage = this.findNearestImage(clickedPosition.x, clickedPosition.y);
-        } 
-        else {
-            // Fallback: Use screen position to determine nearest image
-            // Convert screen to world coordinates
-            const vector = new THREE.Vector3();
-            vector.set(this.pointer.x, this.pointer.y, 0.5);
-            vector.unproject(this.camera);
+            // Update the stored original frustum
+            this.originalFrustum = {
+                left: -halfWidth,
+                right: halfWidth,
+                top: halfHeight,
+                bottom: -halfHeight
+            };
+        } else {
+            // If zoomed in, we should maintain the zoom level but adjust for the new aspect ratio
+            const { size, aspect: newAspect } = this.calculateZoomFrustum();
+            const halfSize = size / 2;
             
-            // Find the nearest image to this position
-            clickedImage = this.findNearestImage(vector.x, vector.y);
+            this.camera.left = -halfSize * newAspect;
+            this.camera.right = halfSize * newAspect;
+            this.camera.top = halfSize;
+            this.camera.bottom = -halfSize;
+            this.camera.updateProjectionMatrix();
+            
+            // Still update the original frustum for when we zoom out
+            this.originalFrustum = {
+                left: -halfWidth,
+                right: halfWidth,
+                top: halfHeight,
+                bottom: -halfHeight
+            };
         }
-        
-        if (!clickedImage) return;
-        
-        // Check if the clicked image is adjacent to the current one
-        const isAdjacent = 
-            (Math.abs(clickedImage.row - this.currentImage.row) <= 1 &&
-             Math.abs(clickedImage.col - this.currentImage.col) <= 1) &&
-            // Exclude clicking on the current image
-            !(clickedImage.row === this.currentImage.row && 
-              clickedImage.col === this.currentImage.col);
-        
-        if (isAdjacent) {
-            const imagePos = this.layout.getImagePosition(clickedImage.row, clickedImage.col);
-            
-            gsap.killTweensOf(this.camera.position);
-            
-            // Set navigating flag to prevent double navigation
-            this.isNavigating = true;
-            
-            gsap.to(this.camera.position, {
-                x: imagePos.x,
-                y: imagePos.y,
-                duration: ANIMATION_DURATIONS.SUBSEQUENT_MOVEMENT,
-                ease: "power2.out",
-                onComplete: () => {
-                    this.currentImage = clickedImage;
-                    
-                    // Update brightness to highlight the new active image
-                    this.setImageBrightness(clickedImage.row, clickedImage.col);
-                    
-                    // Reset navigation flag after animation completes
-                    setTimeout(() => {
-                        this.isNavigating = false;
-                    }, 100);
+    }
+    
+    // Set image brightness to highlight the active image
+    setImageBrightness(activeRow, activeCol) {
+        // Find all sheet image meshes in the scene
+        this.scene.traverse(object => {
+            if (object instanceof THREE.Mesh && 
+                object.userData && 
+                object.userData.isSheetImage) {
+                
+                const { row, col } = object.userData;
+                
+                if (object.material) {
+                    // For the active image, ensure full brightness
+                    if (row === activeRow && col === activeCol) {
+                        // Active image - full brightness
+                        gsap.to(object.material.color, {
+                            r: 1.0,
+                            g: 1.0,
+                            b: 1.0,
+                            duration: 0.35
+                        });
+                    } else {
+                        // Inactive image - darken by using color as a multiplier
+                        // This preserves the image appearance better than opacity
+                        gsap.to(object.material.color, {
+                            r: 0.1,
+                            g: 0.1,
+                            b: 0.1,
+                            duration: 0.5
+                        });
+                    }
                 }
-            });
-        }
+            }
+        });
+    }
+    
+    // Restore all images to full brightness
+    resetImageBrightness() {
+        // First, immediately set the state to ensure any in-progress animations don't interfere
+        gsap.killTweensOf(this.scene.children.filter(obj => 
+            obj instanceof THREE.Mesh && obj.userData && obj.userData.isSheetImage
+        ).map(obj => obj.material?.color));
+        
+        // Then traverse and explicitly set all materials to full brightness
+        this.scene.traverse(object => {
+            if (object instanceof THREE.Mesh && 
+                object.userData && 
+                object.userData.isSheetImage) {
+                
+                if (object.material) {
+                    // First set immediately to ensure consistency
+                    object.material.color.set(new THREE.Color(1, 1, 1));
+                    
+                    // Then animate to ensure smooth transition
+                    gsap.to(object.material.color, {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 1.0,
+                        duration: 0.3
+                    });
+                }
+            }
+        });
     }
     
     // Clear existing image meshes to prevent overlapping when reloading
@@ -982,101 +945,164 @@ export class ContactSheet {
             this.scene.remove(mesh);
         });
     }
-
-    handleResize() {
-        // Always recalculate the correct frustum based on current aspect ratio
-        const aspect = window.innerWidth / window.innerHeight;
-        const frustumSize = aspect > 1 ? 4 : 4 / aspect;
-        const halfHeight = frustumSize / 2;
-        const halfWidth = frustumSize * aspect / 2;
+    
+    setupInteraction() {
+        const canvas = document.querySelector('canvas');
+        if (!canvas) return;
         
-        // If we're not zoomed in, update the camera immediately
-        if (this.state !== SheetState.ZOOMED_IN) {
-            this.camera.left = -halfWidth;
-            this.camera.right = halfWidth;
-            this.camera.top = halfHeight;
-            this.camera.bottom = -halfHeight;
-            this.camera.updateProjectionMatrix();
+        // Add click flag to track if we've dragged past threshold
+        this.hasMovedBeyondThreshold = false;
+        
+        // Handle cursor style based on hover
+        this.addEventListener(canvas, 'mousemove', (event) => {
+            if (this.state === SheetState.ANIMATING) return;
             
-            // Update the stored original frustum
-            this.originalFrustum = {
-                left: -halfWidth,
-                right: halfWidth,
-                top: halfHeight,
-                bottom: -halfHeight
-            };
-        } else {
-            // If zoomed in, we should maintain the zoom level but adjust for the new aspect ratio
-            const { size, aspect: newAspect } = this.calculateZoomFrustum();
-            const halfSize = size / 2;
+            this.updatePointerPosition(event);
+            const intersects = this.raycaster.intersectObject(this.sheet);
             
-            this.camera.left = -halfSize * newAspect;
-            this.camera.right = halfSize * newAspect;
-            this.camera.top = halfSize;
-            this.camera.bottom = -halfSize;
-            this.camera.updateProjectionMatrix();
+            canvas.style.cursor = (intersects.length > 0 && this.isOverImage(intersects[0].uv)) 
+                ? 'pointer' 
+                : 'default';
+        });
+        
+        this.addEventListener(canvas, 'mouseleave', () => {
+            canvas.style.cursor = 'default';
+        });
+        
+        // Handle pointer down for initial zoom
+        this.addEventListener(canvas, 'pointerdown', (event) => {
+            if (this.state === SheetState.ANIMATING) return;
             
-            // Still update the original frustum for when we zoom out
-            this.originalFrustum = {
-                left: -halfWidth,
-                right: halfWidth,
-                top: halfHeight,
-                bottom: -halfHeight
-            };
-        }
-    }
-
-    // Fixed method to properly darken images with textures using color multiplier
-    setImageBrightness(activeRow, activeCol) {
-        // Find all sheet image meshes in the scene
-        this.scene.traverse(object => {
-            if (object instanceof THREE.Mesh && 
-                object.userData && 
-                object.userData.isSheetImage) {
+            // Reset move threshold flag on pointer down
+            this.hasMovedBeyondThreshold = false;
+            
+            if (this.state === SheetState.ZOOMED_IN) {
+                this.startDragging(event);
+            } else {
+                this.handleInitialZoom(event);
+            }
+        });
+        
+        // Handle pointer move for dragging
+        this.addEventListener(canvas, 'pointermove', (event) => {
+            if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+            
+            // Calculate distance moved to distinguish between click and drag
+            if (!this.hasMovedBeyondThreshold) {
+                const deltaX = Math.abs(event.clientX - this.startX);
+                const deltaY = Math.abs(event.clientY - this.startY);
                 
-                const { row, col } = object.userData;
-                
-                if (object.material) {
-                    // For the active image, ensure full brightness
-                    if (row === activeRow && col === activeCol) {
-                        // Active image - full brightness
-                        gsap.to(object.material.color, {
-                            r: 1.0,
-                            g: 1.0,
-                            b: 1.0,
-                            duration: 0.35
-                        });
-                    } else {
-                        // Inactive image - darken by using color as a multiplier
-                        // This preserves the image appearance better than opacity
-                        gsap.to(object.material.color, {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.1,
-                            duration: 0.5
-                        });
+                if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+                    this.hasMovedBeyondThreshold = true;
+                }
+            }
+            
+            this.handleDragging(event);
+        });
+        
+        // Handle pointer up for drag end or click
+        this.addEventListener(canvas, 'pointerup', (event) => {
+            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+            
+            // Only consider as a drag if we moved beyond threshold
+            if (this.isDragging) {
+                if (this.hasMovedBeyondThreshold) {
+                    this.handleDragEnd(event);
+                } else {
+                    // If we didn't move beyond threshold, treat as a click instead
+                    this.isDragging = false;
+                    
+                    // Reset cursor
+                    if (canvas) {
+                        canvas.style.cursor = 'default';
                     }
+                    
+                    // Handle as a click regardless of device type
+                    this.handleAdjacentImageClick(event);
                 }
             }
         });
-    }
-
-    // Restore all images to full brightness
-    resetImageBrightness() {
-        this.scene.traverse(object => {
-            if (object instanceof THREE.Mesh && 
-                object.userData && 
-                object.userData.isSheetImage) {
+        
+        // Update the click handler to work on all devices
+        this.addEventListener(canvas, 'click', (event) => {
+            if (this.state !== SheetState.ZOOMED_IN || 
+                this.state === SheetState.ANIMATING || 
+                this.hasMovedBeyondThreshold) return;
+            
+            // Prevent default behavior and stop propagation to avoid double processing
+            event.preventDefault();
+            event.stopPropagation();
+            
+            // Handle clicks regardless of device type
+            this.handleAdjacentImageClick(event);
+        });
+        
+        // Handle double click/tap to zoom out
+        let lastTapTime = 0;
+        let tapTimeout;
+        
+        const handleZoomOut = (event) => {
+            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING || this.isDragging) return;
+            event.preventDefault();
+            this.zoomOut();
+        };
+        
+        this.addEventListener(canvas, 'dblclick', handleZoomOut);
+        
+        this.addEventListener(canvas, 'touchend', (event) => {
+            if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING || this.isDragging) return;
+            
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTapTime;
+            
+            clearTimeout(tapTimeout);
+            
+            if (tapLength < DOUBLE_TAP_THRESHOLD && tapLength > 0) {
+                handleZoomOut(event);
+            }
+            
+            lastTapTime = currentTime;
+        });
+        
+        // Single tap handler for mobile navigation
+        let singleTapTimer = null;
+        this.addEventListener(canvas, 'touchend', (event) => {
+            if (this.state !== SheetState.ZOOMED_IN || 
+                this.state === SheetState.ANIMATING || 
+                this.hasMovedBeyondThreshold || 
+                this.isDragging) return;
                 
-                if (object.material) {
-                    // Animate back to full brightness
-                    gsap.to(object.material.color, {
-                        r: 1.0,
-                        g: 1.0,
-                        b: 1.0,
-                        duration: 0.3
-                    });
-                }
+            // Get touch position
+            if (event.changedTouches && event.changedTouches.length > 0) {
+                const touch = event.changedTouches[0];
+                
+                // Convert touch position to pointer position for raycasting
+                this.pointer.x = (touch.clientX / window.innerWidth) * 2 - 1;
+                this.pointer.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+                this.raycaster.setFromCamera(this.pointer, this.camera);
+                
+                // Delay handling the tap to allow for potential double tap
+                clearTimeout(singleTapTimer);
+                singleTapTimer = setTimeout(() => {
+                    // If sufficient time has passed and we haven't detected a double tap
+                    if (new Date().getTime() - lastTapTime > DOUBLE_TAP_THRESHOLD) {
+                        this.handleAdjacentImageClick(touch); // Pass the touch as event
+                    }
+                }, DOUBLE_TAP_THRESHOLD + 50); // Wait a bit longer than double tap threshold
+            }
+        });
+        
+        // Handle resize for zoomed state
+        this.addEventListener(window, 'resize', () => {
+            if (this.state === SheetState.ZOOMED_IN) {
+                const { size, aspect } = this.calculateZoomFrustum();
+                const halfSize = size / 2;
+                
+                this.camera.left = -halfSize * aspect;
+                this.camera.right = halfSize * aspect;
+                this.camera.top = halfSize;
+                this.camera.bottom = -halfSize;
+                this.camera.updateProjectionMatrix();
             }
         });
     }
