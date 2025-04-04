@@ -63,21 +63,4 @@ export class GridLayout {
             height: this.sheetHeight * this.scale
         };
     }
-    
-    getCameraDistance() {
-        // Calculate distance needed to view entire sheet
-        const vFov = 75 * Math.PI / 180; // Convert FOV to radians
-        const aspect = window.innerWidth / window.innerHeight;
-        
-        // Get the larger of width or height based on aspect ratio
-        const height = this.sheetHeight * this.scale;
-        const width = this.sheetWidth * this.scale;
-        
-        // Calculate distances needed for both dimensions
-        const heightDistance = height / (2 * Math.tan(vFov / 2));
-        const widthDistance = (width / aspect) / (2 * Math.tan(vFov / 2));
-        
-        // Use the larger distance to ensure everything is visible
-        return Math.max(heightDistance, widthDistance) * 1.1; // Add 10% margin
-    }
 } 

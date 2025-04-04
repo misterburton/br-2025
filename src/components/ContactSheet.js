@@ -12,6 +12,14 @@ export class ContactSheet {
         this.isTransitioning = false;
         this.isZoomedIn = false;
         
+        // Store original camera settings
+        this.originalFrustum = {
+            left: camera.left,
+            right: camera.right,
+            top: camera.top,
+            bottom: camera.bottom
+        };
+        
         // Interaction state
         this.raycaster = new THREE.Raycaster();
         this.pointer = new THREE.Vector2();
@@ -57,10 +65,6 @@ export class ContactSheet {
             this.sheet.position.set(0, 0, -0.1);
             this.scene.add(this.sheet);
             
-            const distance = this.layout.getCameraDistance();
-            this.camera.position.z = distance;
-            this.camera.lookAt(0, 0, 0);
-            
             this.renderer = this.scene.renderer || this.camera.parent?.renderer;
             
         } catch (error) {
@@ -90,10 +94,18 @@ export class ContactSheet {
                pixelY <= imageY + this.layout.imageHeight;
     }
     
-    calculateZoomScale() {
-        const viewportAspect = window.innerWidth / window.innerHeight;
-        const baseScale = 9;
-        return viewportAspect > 1 ? baseScale * 0.7 : baseScale;
+    calculateZoomFrustum() {
+        // We want the image to take up 50% of the viewport height
+        const targetHeight = window.innerHeight * 0.5;
+        
+        // Calculate the frustum size needed to achieve this
+        // The image height is 900px, and we want it to be targetHeight pixels tall
+        const frustumSize = (targetHeight / 900) * 2; // *2 because frustum is total height
+        
+        return {
+            size: frustumSize,
+            aspect: window.innerWidth / window.innerHeight
+        };
     }
 
     zoomToImage(gridX, gridY) {
@@ -106,16 +118,17 @@ export class ContactSheet {
         const imagePos = this.layout.getImagePosition(gridY, gridX);
         const zoomScale = this.calculateZoomScale();
         
-        gsap.to(this.sheet.scale, {
-            x: zoomScale,
-            y: zoomScale,
+        // Move camera closer to zoom in
+        gsap.to(this.camera.position, {
+            z: 5 / zoomScale,
             duration: 0.75,
             ease: "power2.in"
         });
         
-        gsap.to(this.sheet.position, {
-            x: imagePos.x * -zoomScale,
-            y: imagePos.y * -zoomScale,
+        // Move camera to center on image
+        gsap.to(this.camera.position, {
+            x: -imagePos.x,
+            y: -imagePos.y,
             duration: 1.5,
             ease: "power4.inOut",
             onComplete: () => {
@@ -129,23 +142,24 @@ export class ContactSheet {
         if (this.isTransitioning) return;
         this.isTransitioning = true;
         
-        gsap.to(this.sheet.scale, {
-            x: 1,
-            y: 1,
+        // Move camera back to original position
+        gsap.to(this.camera.position, {
+            z: 5,
             duration: 0.85,
             ease: "power3.inOut",
-            delay: 0.25,
+            delay: 0.25
+        });
+        
+        // Return camera to center
+        gsap.to(this.camera.position, {
+            x: 0,
+            y: 0,
+            duration: 0.57,
+            ease: "power3.in",
             onComplete: () => {
                 this.isTransitioning = false;
                 this.isZoomedIn = false;
             }
-        });
-        
-        gsap.to(this.sheet.position, {
-            x: 0,
-            y: 0,
-            duration: 0.57,
-            ease: "power3.in"
         });
     }
     
@@ -160,6 +174,7 @@ export class ContactSheet {
         // Handle pointer down
         canvas.addEventListener('pointerdown', (event) => {
             event.preventDefault();
+            console.log('CLICKED!');
             
             // Handle click/tap
             this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -172,27 +187,72 @@ export class ContactSheet {
                 const intersect = intersects[0];
                 const uv = intersect.uv;
                 
-                if (this.isZoomedIn) {
-                    const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
-                    const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
+                // Get grid position of clicked image
+                const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
+                const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
+                
+                if (this.isOverImage(uv)) {
+                    console.log('Zooming in on image:', gridX, gridY);
                     
-                    if (gridX === this.currentGridX && gridY === this.currentGridY) {
-                        this.isLongPressing = true;
-                        this.longPressTimer = setTimeout(() => {
-                            if (this.isLongPressing) {
-                                this.zoomOut();
-                            }
-                        }, this.longPressDuration);
-                    }
-                } else {
-                    const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
-                    const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
+                    // Get image position
+                    const imagePos = this.layout.getImagePosition(gridY, gridX);
                     
-                    if (this.isOverImage(uv)) {
-                        this.zoomToImage(gridX, gridY);
-                    }
+                    // Calculate precise zoom frustum
+                    const { size, aspect } = this.calculateZoomFrustum();
+                    const halfSize = size / 2;
+                    
+                    // Animate camera position and frustum together
+                    gsap.to(this.camera, {
+                        left: -halfSize * aspect,
+                        right: halfSize * aspect,
+                        top: halfSize,
+                        bottom: -halfSize,
+                        duration: 0.75,
+                        ease: "power2.inOut",
+                        onUpdate: () => {
+                            this.camera.updateProjectionMatrix();
+                        }
+                    });
+                    
+                    gsap.to(this.camera.position, {
+                        x: imagePos.x,
+                        y: imagePos.y,
+                        duration: 0.75,
+                        ease: "power2.inOut"
+                    });
+                    
+                    this.isZoomedIn = true;
                 }
             }
+        });
+        
+        // Handle double click to zoom out
+        canvas.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            console.log('DOUBLE CLICKED!');
+            
+            // Animate camera back to center
+            gsap.to(this.camera.position, {
+                x: 0,
+                y: 0,
+                duration: 0.75,
+                ease: "power2.inOut"
+            });
+            
+            // Animate frustum back to original size
+            gsap.to(this.camera, {
+                left: this.originalFrustum.left,
+                right: this.originalFrustum.right,
+                top: this.originalFrustum.top,
+                bottom: this.originalFrustum.bottom,
+                duration: 0.75,
+                ease: "power2.inOut",
+                onUpdate: () => {
+                    this.camera.updateProjectionMatrix();
+                }
+            });
+            
+            this.isZoomedIn = false;
         });
         
         // Handle pointer up
@@ -216,5 +276,31 @@ export class ContactSheet {
         });
         
         canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (this.isZoomedIn) {
+                // If zoomed in, recalculate and update the frustum
+                const { size, aspect } = this.calculateZoomFrustum();
+                const halfSize = size / 2;
+                
+                this.camera.left = -halfSize * aspect;
+                this.camera.right = halfSize * aspect;
+                this.camera.top = halfSize;
+                this.camera.bottom = -halfSize;
+                this.camera.updateProjectionMatrix();
+            } else {
+                // If not zoomed in, reset to original frustum
+                const aspect = window.innerWidth / window.innerHeight;
+                const halfHeight = 2;
+                const halfWidth = halfHeight * aspect;
+                
+                this.camera.left = -halfWidth;
+                this.camera.right = halfWidth;
+                this.camera.top = halfHeight;
+                this.camera.bottom = -halfHeight;
+                this.camera.updateProjectionMatrix();
+            }
+        });
     }
 } 
