@@ -8,6 +8,10 @@ body {
     background: #000;
     overflow: hidden;
     touch-action: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    text-rendering: optimizeLegibility;
 }
 
 canvas {
@@ -18,6 +22,12 @@ canvas {
     height: 100%;
     cursor: pointer;
     touch-action: none;
+    
+    /* Hardware acceleration hints for better performance */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+    will-change: transform;
 }
 
 #nav {
@@ -29,8 +39,31 @@ canvas {
     z-index: 1000;
     opacity: 0;
     transition: opacity 0.3s ease;
+    
+    /* Hardware acceleration hints */
+    transform: translateZ(0);
+    will-change: opacity;
 }
 
 #nav.visible {
     opacity: 1;
+}
+
+/* Prevent mobile text selection */
+::selection {
+    background: transparent;
+}
+
+/* Optimize for touch devices */
+@media (hover: none) and (pointer: coarse) {
+    body {
+        overscroll-behavior: none; /* Prevent browser pull-to-refresh */
+    }
+    
+    canvas {
+        /* Additional touch optimizations */
+        touch-action: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+    }
 } 

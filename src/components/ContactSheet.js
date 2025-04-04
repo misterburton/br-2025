@@ -67,7 +67,23 @@ export class ContactSheet {
         }
     }
     
-    cleanup() {
+    // Consolidated cleanup/dispose method
+    dispose() {
+        // First clean up event listeners
+        this.removeEventListeners();
+        
+        // Dispose of THREE.js objects to prevent memory leaks
+        this.disposeThreeJsObjects();
+        
+        // Kill any active animations
+        if (window.gsap) {
+            window.gsap.killTweensOf(this.camera);
+            window.gsap.killTweensOf(this.camera.position);
+        }
+    }
+    
+    // Split out event listener cleanup for clarity
+    removeEventListeners() {
         // Remove all event listeners
         this.eventListeners.forEach(({ element, type, handler }) => {
             element.removeEventListener(type, handler);
@@ -75,8 +91,49 @@ export class ContactSheet {
         this.eventListeners = [];
     }
     
+    // Properly dispose THREE.js objects
+    disposeThreeJsObjects() {
+        // Dispose of sheet mesh
+        if (this.sheet) {
+            if (this.sheet.geometry) this.sheet.geometry.dispose();
+            if (this.sheet.material) {
+                if (this.sheet.material.map) this.sheet.material.map.dispose();
+                this.sheet.material.dispose();
+            }
+            this.scene.remove(this.sheet);
+        }
+        
+        // Find and dispose all image meshes
+        const imagesToRemove = [];
+        this.scene.traverse(object => {
+            if (object instanceof THREE.Mesh && 
+                Math.abs(object.position.z + 2) < 0.1 && 
+                object !== this.sheet) {
+                imagesToRemove.push(object);
+            }
+        });
+        
+        imagesToRemove.forEach(mesh => {
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) {
+                if (mesh.material.map) mesh.material.map.dispose();
+                mesh.material.dispose();
+            }
+            this.scene.remove(mesh);
+        });
+    }
+    
+    // Maintain backward compatibility
+    cleanup() {
+        this.dispose();
+    }
+    
+    // Add passive option for touch and wheel events
     addEventListener(element, type, handler) {
-        element.addEventListener(type, handler);
+        const passiveEvents = ['touchstart', 'touchmove', 'touchend', 'wheel', 'mousewheel'];
+        const options = passiveEvents.includes(type) ? { passive: true } : undefined;
+        
+        element.addEventListener(type, handler, options);
         this.eventListeners.push({ element, type, handler });
     }
     
@@ -411,12 +468,28 @@ export class ContactSheet {
     async setupSheet() {
         try {
             const textureLoader = new THREE.TextureLoader();
+            
+            // Improved texture loading with better error handling
             const sheetTexture = await new Promise((resolve, reject) => {
+                const texturePath = 'images/contact-sheet-placeholder.jpg';
+                
                 textureLoader.load(
-                    'images/contact-sheet-placeholder.jpg',
-                    (texture) => resolve(texture),
-                    undefined,
-                    (error) => reject(error)
+                    texturePath,
+                    (texture) => {
+                        console.log(`Successfully loaded texture: ${texturePath}`);
+                        resolve(texture);
+                    },
+                    (progressEvent) => {
+                        // Optional: Track loading progress
+                        if (progressEvent.lengthComputable) {
+                            const percentComplete = (progressEvent.loaded / progressEvent.total) * 100;
+                            console.log(`Loading texture: ${percentComplete.toFixed(1)}%`);
+                        }
+                    },
+                    (error) => {
+                        console.error(`Failed to load texture: ${texturePath}`, error);
+                        reject(new Error(`Failed to load contact sheet texture: ${error.message}`));
+                    }
                 );
             });
             
@@ -517,12 +590,37 @@ export class ContactSheet {
     async createPlaceholderImages() {
         try {
             const textureLoader = new THREE.TextureLoader();
+            
+            // Improved texture loading with better error handling
             const placeholderTexture = await new Promise((resolve, reject) => {
+                const texturePath = 'images/600x900.jpg';
+                
                 textureLoader.load(
-                    'images/600x900.jpg', // Path that was working on Vercel
-                    (texture) => resolve(texture),
-                    undefined,
-                    (error) => reject(error)
+                    texturePath,
+                    (texture) => {
+                        console.log(`Successfully loaded texture: ${texturePath}`);
+                        // Enable texture optimizations
+                        texture.generateMipmaps = true;
+                        texture.minFilter = THREE.LinearMipmapLinearFilter;
+                        texture.magFilter = THREE.LinearFilter;
+                        // Get renderer from scene if available or use default value
+                        const maxAnisotropy = this.scene.renderer 
+                            ? this.scene.renderer.capabilities.getMaxAnisotropy() 
+                            : 1;
+                        texture.anisotropy = maxAnisotropy;
+                        resolve(texture);
+                    },
+                    (progressEvent) => {
+                        // Optional: Track loading progress
+                        if (progressEvent.lengthComputable) {
+                            const percentComplete = (progressEvent.loaded / progressEvent.total) * 100;
+                            console.log(`Loading texture: ${percentComplete.toFixed(1)}%`);
+                        }
+                    },
+                    (error) => {
+                        console.error(`Failed to load texture: ${texturePath}`, error);
+                        reject(new Error(`Failed to load placeholder image texture: ${error.message}`));
+                    }
                 );
             });
             
