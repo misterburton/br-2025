@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { GUI } from 'lil-gui';
 
 export class Engine {
     constructor() {
@@ -65,18 +64,6 @@ export class Engine {
             this.stats = new window.Stats();
             this.stats.showPanel(0);
             document.body.appendChild(this.stats.dom);
-            
-            // Setup GUI
-            this.gui = new GUI();
-            const cameraFolder = this.gui.addFolder('Camera');
-            cameraFolder.add(this.camera.position, 'x', -10, 10).listen();
-            cameraFolder.add(this.camera.position, 'y', -10, 10).listen();
-            cameraFolder.add(this.camera.position, 'z', 0, 20).listen();
-            cameraFolder.open();
-            
-            const debugFolder = this.gui.addFolder('Debug');
-            debugFolder.add(this.axesHelper, 'visible').name('Show Axes');
-            debugFolder.open();
             
         } catch (error) {
             console.warn('Debug tools failed to load:', error);

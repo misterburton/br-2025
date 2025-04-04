@@ -58,9 +58,7 @@ src/
     {
         "imports": {
             "three": "https://cdn.jsdelivr.net/npm/three@0.171.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/",
-            "three/examples/jsm/controls/OrbitControls": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/controls/OrbitControls.js",
-            "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.js"
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/"
         }
     }
 </script>
@@ -181,8 +179,6 @@ zoomOut() {
 3. Access via http://localhost:8080 (or configured port)
 
 ## Debug Mode
-- Camera controls in top-right GUI
-- Axes helper for orientation (toggle in Debug panel)
 - Stats panel for performance monitoring
 - Console logging for key operations
 
