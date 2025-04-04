@@ -207,7 +207,19 @@ export class ContactSheet {
         const image = this.getImageAtPointer();
         if (image) {
             const imagePos = this.layout.getImagePosition(image.row, image.col);
+            
+            // Start the zoom animation
             this.zoomToImage(imagePos, image.row, image.col);
+            
+            // Add a subtle delay before starting brightness transitions
+            // This creates a more natural sequence where the zoom begins 
+            // slightly before the darkening effect
+            setTimeout(() => {
+                // Only proceed if we're still animating (not cancelled)
+                if (this.state === SheetState.ANIMATING) {
+                    this.setImageBrightness(image.row, image.col);
+                }
+            }, 250); // 250ms delay - adjust as needed for the right feel
         }
     }
     
@@ -572,8 +584,8 @@ export class ContactSheet {
                 this.currentImage = { row, col };
                 this.state = SheetState.ZOOMED_IN;
                 
-                // Set the brightness to highlight the active image
-                this.setImageBrightness(row, col);
+                // We no longer need to set brightness here as it's already
+                // set at the beginning of the animation for a smoother effect
             }
         });
         
