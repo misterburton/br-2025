@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { gsap } from '../libs/gsap.js';
 import { GridLayout } from './GridLayout.js';
 
 export class ContactSheet {
@@ -28,6 +27,9 @@ export class ContactSheet {
         this.startY = 0;
         this.lastX = 0;
         this.lastY = 0;
+        this.lastTime = 0;
+        this.velocityX = 0;
+        this.velocityY = 0;
         this.swipeDirection = null; // 'horizontal' or 'vertical'
     }
     
@@ -182,6 +184,9 @@ export class ContactSheet {
                 this.startY = event.clientY;
                 this.lastX = this.startX;
                 this.lastY = this.startY;
+                this.lastTime = performance.now();
+                this.velocityX = 0;
+                this.velocityY = 0;
                 this.swipeDirection = null;
                 event.preventDefault();
             } else {
@@ -209,6 +214,13 @@ export class ContactSheet {
         canvas.addEventListener('pointermove', (event) => {
             if (!this.isDragging || !this.isZoomedIn) return;
             
+            const currentTime = performance.now();
+            const deltaTime = currentTime - this.lastTime;
+            
+            // Calculate velocity
+            this.velocityX = (event.clientX - this.lastX) / deltaTime;
+            this.velocityY = (event.clientY - this.lastY) / deltaTime;
+            
             // Determine swipe direction on first move
             if (!this.swipeDirection) {
                 const deltaX = Math.abs(event.clientX - this.startX);
@@ -228,9 +240,10 @@ export class ContactSheet {
                 this.camera.position.y += deltaY;
             }
             
-            // Store last position
+            // Store last position and time
             this.lastX = event.clientX;
             this.lastY = event.clientY;
+            this.lastTime = currentTime;
         });
         
         // Handle pointer up for drag end
@@ -247,29 +260,41 @@ export class ContactSheet {
             let targetImage = { ...this.currentImage };
             
             if (this.swipeDirection === 'horizontal') {
-                // Move one image left or right based on swipe direction
-                if (totalDeltaX > 50) { // Swipe right
-                    targetImage.col = Math.max(0, this.currentImage.col - 1);
-                } else if (totalDeltaX < -50) { // Swipe left
-                    targetImage.col = Math.min(this.layout.columns - 1, this.currentImage.col + 1);
+                // Check velocity and distance to determine direction
+                const shouldMove = Math.abs(this.velocityX) > 0.3 || Math.abs(totalDeltaX) > 50;
+                if (shouldMove) {
+                    if (this.velocityX > 0 || totalDeltaX > 0) { // Swipe right
+                        targetImage.col = Math.max(0, this.currentImage.col - 1);
+                    } else { // Swipe left
+                        targetImage.col = Math.min(this.layout.columns - 1, this.currentImage.col + 1);
+                    }
                 }
             } else {
-                // Move one image up or down based on swipe direction
-                if (totalDeltaY > 50) { // Swipe down
-                    targetImage.row = Math.max(0, this.currentImage.row - 1);
-                } else if (totalDeltaY < -50) { // Swipe up
-                    targetImage.row = Math.min(this.layout.rows - 1, this.currentImage.row + 1);
+                // Check velocity and distance to determine direction
+                const shouldMove = Math.abs(this.velocityY) > 0.3 || Math.abs(totalDeltaY) > 50;
+                if (shouldMove) {
+                    if (this.velocityY > 0 || totalDeltaY > 0) { // Swipe down
+                        targetImage.row = Math.max(0, this.currentImage.row - 1);
+                    } else { // Swipe up
+                        targetImage.row = Math.min(this.layout.rows - 1, this.currentImage.row + 1);
+                    }
                 }
             }
             
             const imagePos = this.layout.getImagePosition(targetImage.row, targetImage.col);
             
-            // Animate to target image
+            // Animate to target image with momentum
+            const duration = 0.3;
+            const ease = "power2.out";
+            
+            // Kill any existing animations
+            gsap.killTweensOf(this.camera.position);
+            
             gsap.to(this.camera.position, {
                 x: imagePos.x,
                 y: imagePos.y,
-                duration: 0.3,
-                ease: "power2.out",
+                duration: duration,
+                ease: ease,
                 onComplete: () => {
                     this.currentImage = targetImage;
                 }
