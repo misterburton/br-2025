@@ -7,6 +7,7 @@ export class ContactSheet {
         this.camera = camera;
         this.layout = new GridLayout();
         this.isZoomedIn = false;
+        this.isAnimating = false; // Track animation state
         
         // Store original camera settings
         this.originalFrustum = {
@@ -116,6 +117,8 @@ export class ContactSheet {
         // If we're already zoomed in, use faster animations for image-to-image movement
         const isSubsequentMovement = this.isZoomedIn;
         
+        this.isAnimating = true;
+        
         // Animate camera frustum
         gsap.to(this.camera, {
             left: -halfSize * aspect,
@@ -138,6 +141,7 @@ export class ContactSheet {
             overwrite: false,
             onComplete: () => {
                 this.currentImage = { row, col };
+                this.isAnimating = false;
             }
         });
         
@@ -145,6 +149,8 @@ export class ContactSheet {
     }
     
     zoomOut() {
+        this.isAnimating = true;
+        
         // Animate camera back to center with a quick initial movement
         gsap.to(this.camera.position, {
             x: 0,
@@ -165,10 +171,12 @@ export class ContactSheet {
             ease: "power3.inOut",
             onUpdate: () => {
                 this.camera.updateProjectionMatrix();
+            },
+            onComplete: () => {
+                this.isZoomedIn = false;
+                this.isAnimating = false;
             }
         });
-        
-        this.isZoomedIn = false;
     }
     
     setupInteraction() {
@@ -177,6 +185,8 @@ export class ContactSheet {
         
         // Handle pointer down for initial zoom
         canvas.addEventListener('pointerdown', (event) => {
+            if (this.isAnimating) return;
+            
             if (this.isZoomedIn) {
                 // Start dragging
                 this.isDragging = true;
@@ -212,7 +222,7 @@ export class ContactSheet {
         
         // Handle pointer move for dragging
         canvas.addEventListener('pointermove', (event) => {
-            if (!this.isDragging || !this.isZoomedIn) return;
+            if (!this.isDragging || !this.isZoomedIn || this.isAnimating) return;
             
             const currentTime = performance.now();
             const deltaTime = currentTime - this.lastTime;
@@ -248,7 +258,7 @@ export class ContactSheet {
         
         // Handle pointer up for drag end
         canvas.addEventListener('pointerup', (event) => {
-            if (!this.isDragging || !this.isZoomedIn) return;
+            if (!this.isDragging || !this.isZoomedIn || this.isAnimating) return;
             
             this.isDragging = false;
             
@@ -301,10 +311,33 @@ export class ContactSheet {
             });
         });
         
-        // Handle double click to zoom out
-        canvas.addEventListener('dblclick', (event) => {
+        // Handle double click/tap to zoom out
+        let lastTapTime = 0;
+        let tapTimeout;
+        
+        const handleZoomOut = (event) => {
+            if (!this.isZoomedIn || this.isAnimating) return;
             event.preventDefault();
             this.zoomOut();
+        };
+        
+        // Desktop double click
+        canvas.addEventListener('dblclick', handleZoomOut);
+        
+        // Mobile double tap
+        canvas.addEventListener('touchend', (event) => {
+            if (!this.isZoomedIn || this.isAnimating) return;
+            
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTapTime;
+            
+            clearTimeout(tapTimeout);
+            
+            if (tapLength < 300 && tapLength > 0) {
+                handleZoomOut(event);
+            }
+            
+            lastTapTime = currentTime;
         });
         
         // Handle resize for zoomed state
