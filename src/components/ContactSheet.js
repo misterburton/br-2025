@@ -20,6 +20,15 @@ export class ContactSheet {
         // Interaction state
         this.raycaster = new THREE.Raycaster();
         this.pointer = new THREE.Vector2();
+        this.currentImage = { row: 0, col: 0 };
+        
+        // Touch state
+        this.isDragging = false;
+        this.startX = 0;
+        this.startY = 0;
+        this.lastX = 0;
+        this.lastY = 0;
+        this.swipeDirection = null; // 'horizontal' or 'vertical'
     }
     
     async init() {
@@ -98,7 +107,7 @@ export class ContactSheet {
         };
     }
     
-    zoomToImage(imagePos) {
+    zoomToImage(imagePos, row, col) {
         const { size, aspect } = this.calculateZoomFrustum();
         const halfSize = size / 2;
         
@@ -111,8 +120,8 @@ export class ContactSheet {
             right: halfSize * aspect,
             top: halfSize,
             bottom: -halfSize,
-            duration: isSubsequentMovement ? 0.75 : 0.75,
-            ease: isSubsequentMovement ? "power3.inOut" : "power2.in",
+            duration: isSubsequentMovement ? 0.3 : 0.75,
+            ease: isSubsequentMovement ? "power2.inOut" : "power2.in",
             onUpdate: () => {
                 this.camera.updateProjectionMatrix();
             }
@@ -122,9 +131,12 @@ export class ContactSheet {
         gsap.to(this.camera.position, {
             x: imagePos.x,
             y: imagePos.y,
-            duration: isSubsequentMovement ? 0.65 : 1.25,
-            ease: isSubsequentMovement ? "Expo.inOut" : "power4.inOut",
-            overwrite: false
+            duration: isSubsequentMovement ? 0.5 : 1.5,
+            ease: isSubsequentMovement ? "power2.inOut" : "power4.inOut",
+            overwrite: false,
+            onComplete: () => {
+                this.currentImage = { row, col };
+            }
         });
         
         this.isZoomedIn = true;
@@ -161,34 +173,107 @@ export class ContactSheet {
         const canvas = document.querySelector('canvas');
         if (!canvas) return;
         
-        canvas.style.userSelect = 'none';
-        canvas.style.webkitUserSelect = 'none';
-        canvas.style.webkitTouchCallout = 'none';
-        
-        // Handle pointer down
+        // Handle pointer down for initial zoom
         canvas.addEventListener('pointerdown', (event) => {
-            event.preventDefault();
-            
-            this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            
-            this.raycaster.setFromCamera(this.pointer, this.camera);
-            const intersects = this.raycaster.intersectObject(this.sheet);
-            
-            if (intersects.length > 0) {
-                const intersect = intersects[0];
-                const uv = intersect.uv;
+            if (this.isZoomedIn) {
+                // Start dragging
+                this.isDragging = true;
+                this.startX = event.clientX;
+                this.startY = event.clientY;
+                this.lastX = this.startX;
+                this.lastY = this.startY;
+                this.swipeDirection = null;
+                event.preventDefault();
+            } else {
+                // Handle zoom
+                event.preventDefault();
                 
-                if (this.isOverImage(uv)) {
-                    // Get grid position of clicked image
+                this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+                this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                
+                this.raycaster.setFromCamera(this.pointer, this.camera);
+                const intersects = this.raycaster.intersectObject(this.sheet);
+                
+                if (intersects.length > 0 && this.isOverImage(intersects[0].uv)) {
+                    const uv = intersects[0].uv;
                     const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
                     const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
                     
-                    // Get image position and zoom
                     const imagePos = this.layout.getImagePosition(gridY, gridX);
-                    this.zoomToImage(imagePos);
+                    this.zoomToImage(imagePos, gridY, gridX);
                 }
             }
+        });
+        
+        // Handle pointer move for dragging
+        canvas.addEventListener('pointermove', (event) => {
+            if (!this.isDragging || !this.isZoomedIn) return;
+            
+            // Determine swipe direction on first move
+            if (!this.swipeDirection) {
+                const deltaX = Math.abs(event.clientX - this.startX);
+                const deltaY = Math.abs(event.clientY - this.startY);
+                this.swipeDirection = deltaX > deltaY ? 'horizontal' : 'vertical';
+            }
+            
+            // Convert screen coordinates to world coordinates
+            const scale = (this.camera.top - this.camera.bottom) / window.innerHeight;
+            const deltaX = (event.clientX - this.lastX) * scale;
+            const deltaY = (event.clientY - this.lastY) * scale;
+            
+            // Update camera position based on swipe direction
+            if (this.swipeDirection === 'horizontal') {
+                this.camera.position.x -= deltaX;
+            } else {
+                this.camera.position.y += deltaY;
+            }
+            
+            // Store last position
+            this.lastX = event.clientX;
+            this.lastY = event.clientY;
+        });
+        
+        // Handle pointer up for drag end
+        canvas.addEventListener('pointerup', (event) => {
+            if (!this.isDragging || !this.isZoomedIn) return;
+            
+            this.isDragging = false;
+            
+            // Calculate total swipe distance
+            const totalDeltaX = event.clientX - this.startX;
+            const totalDeltaY = event.clientY - this.startY;
+            
+            // Find target image - only move one image at a time
+            let targetImage = { ...this.currentImage };
+            
+            if (this.swipeDirection === 'horizontal') {
+                // Move one image left or right based on swipe direction
+                if (totalDeltaX > 50) { // Swipe right
+                    targetImage.col = Math.max(0, this.currentImage.col - 1);
+                } else if (totalDeltaX < -50) { // Swipe left
+                    targetImage.col = Math.min(this.layout.columns - 1, this.currentImage.col + 1);
+                }
+            } else {
+                // Move one image up or down based on swipe direction
+                if (totalDeltaY > 50) { // Swipe down
+                    targetImage.row = Math.max(0, this.currentImage.row - 1);
+                } else if (totalDeltaY < -50) { // Swipe up
+                    targetImage.row = Math.min(this.layout.rows - 1, this.currentImage.row + 1);
+                }
+            }
+            
+            const imagePos = this.layout.getImagePosition(targetImage.row, targetImage.col);
+            
+            // Animate to target image
+            gsap.to(this.camera.position, {
+                x: imagePos.x,
+                y: imagePos.y,
+                duration: 0.3,
+                ease: "power2.out",
+                onComplete: () => {
+                    this.currentImage = targetImage;
+                }
+            });
         });
         
         // Handle double click to zoom out
@@ -200,7 +285,6 @@ export class ContactSheet {
         // Handle window resize
         window.addEventListener('resize', () => {
             if (this.isZoomedIn) {
-                // If zoomed in, recalculate and update the frustum
                 const { size, aspect } = this.calculateZoomFrustum();
                 const halfSize = size / 2;
                 
@@ -210,7 +294,6 @@ export class ContactSheet {
                 this.camera.bottom = -halfSize;
                 this.camera.updateProjectionMatrix();
             } else {
-                // If not zoomed in, reset to original frustum
                 const aspect = window.innerWidth / window.innerHeight;
                 const halfHeight = 2;
                 const halfWidth = halfHeight * aspect;
@@ -222,5 +305,44 @@ export class ContactSheet {
                 this.camera.updateProjectionMatrix();
             }
         });
+    }
+    
+    calculateBounds() {
+        const imageDims = this.layout.getImageDimensions();
+        const halfWidth = imageDims.width / 2;
+        const halfHeight = imageDims.height / 2;
+        
+        return {
+            left: -halfWidth * (this.layout.columns - 1),
+            right: halfWidth * (this.layout.columns - 1),
+            top: halfHeight * (this.layout.rows - 1),
+            bottom: -halfHeight * (this.layout.rows - 1)
+        };
+    }
+    
+    findNearestImage(x, y) {
+        let minDist = Infinity;
+        let nearestPos = null;
+        let nearestRow = 0;
+        let nearestCol = 0;
+        
+        for (let row = 0; row < this.layout.rows; row++) {
+            for (let col = 0; col < this.layout.columns; col++) {
+                const pos = this.layout.getImagePosition(row, col);
+                const dist = Math.sqrt(
+                    Math.pow(x - pos.x, 2) +
+                    Math.pow(y - pos.y, 2)
+                );
+                
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearestPos = pos;
+                    nearestRow = row;
+                    nearestCol = col;
+                }
+            }
+        }
+        
+        return { row: nearestRow, col: nearestCol };
     }
 } 
