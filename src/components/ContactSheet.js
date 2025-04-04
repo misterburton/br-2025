@@ -28,6 +28,9 @@ export class ContactSheet {
         this.layout = new GridLayout();
         this.state = SheetState.IDLE;
         
+        // Determine image paths based on URL
+        this.configurePaths();
+        
         // Store original camera settings
         this.originalFrustum = {
             left: camera.left,
@@ -411,12 +414,21 @@ export class ContactSheet {
     async setupSheet() {
         try {
             const textureLoader = new THREE.TextureLoader();
+            const imagePath = `${this.imageBasePath}/contact-sheet-placeholder.jpg`;
+            console.log('Loading contact sheet from:', imagePath);
+            
             const sheetTexture = await new Promise((resolve, reject) => {
                 textureLoader.load(
-                    '/images/contact-sheet-placeholder.jpg',
-                    (texture) => resolve(texture),
+                    imagePath,
+                    (texture) => {
+                        console.log('Successfully loaded contact sheet');
+                        resolve(texture);
+                    },
                     undefined,
-                    (error) => reject(error)
+                    (error) => {
+                        console.error('Failed to load contact sheet:', error);
+                        reject(error);
+                    }
                 );
             });
             
@@ -517,12 +529,21 @@ export class ContactSheet {
     async createPlaceholderImages() {
         try {
             const textureLoader = new THREE.TextureLoader();
+            const imagePath = `${this.imageBasePath}/600x900.jpg`;
+            console.log('Loading placeholder image from:', imagePath);
+            
             const placeholderTexture = await new Promise((resolve, reject) => {
                 textureLoader.load(
-                    '/images/600x900.jpg',
-                    (texture) => resolve(texture),
+                    imagePath,
+                    (texture) => {
+                        console.log('Successfully loaded placeholder image');
+                        resolve(texture);
+                    },
                     undefined,
-                    (error) => reject(error)
+                    (error) => {
+                        console.error('Failed to load placeholder image:', error);
+                        reject(error);
+                    }
                 );
             });
             
@@ -636,5 +657,27 @@ export class ContactSheet {
                 }
             });
         }
+    }
+    
+    // Configure paths based on current URL
+    configurePaths() {
+        const hostname = window.location.hostname;
+        const protocol = window.location.protocol;
+        const port = window.location.port;
+        
+        // Log information for debugging
+        console.log('Environment detection:');
+        console.log('- Protocol:', protocol);
+        console.log('- Hostname:', hostname);
+        console.log('- Port:', port);
+        
+        // Determine if we're on localhost/127.0.0.1 (local dev) or deployed (Vercel)
+        const isLocalDev = hostname === 'localhost' || hostname === '127.0.0.1';
+        
+        // For local development: '/public/images'
+        // For Vercel: '/images'
+        this.imageBasePath = isLocalDev ? '/public/images' : '/images';
+        
+        console.log(`Using image base path: ${this.imageBasePath}`);
     }
 } 
