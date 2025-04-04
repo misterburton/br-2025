@@ -32,12 +32,17 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
+
+// CRITICAL: Set correct color management for photography
+// The colorSpace property is the modern replacement for outputEncoding
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
 document.body.appendChild(renderer.domElement);
 
 // Initialize contact sheet
 let contactSheet;
 try {
-    contactSheet = new ContactSheet(scene, camera);
+    contactSheet = new ContactSheet(scene, camera, 'sheet_one');
     // Store renderer in scene for texture optimization access
     scene.renderer = renderer;
     contactSheet.init().catch(console.error);

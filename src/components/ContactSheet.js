@@ -22,11 +22,15 @@ const SheetState = {
 };
 
 export class ContactSheet {
-    constructor(scene, camera) {
+    constructor(scene, camera, sheetId = 'sheet_one') {
         this.scene = scene;
         this.camera = camera;
         this.layout = new GridLayout();
         this.state = SheetState.IDLE;
+        this.sheetId = sheetId;
+        
+        // Create a reusable texture loader
+        this.textureLoader = new THREE.TextureLoader();
         
         // Store original camera settings
         this.originalFrustum = {
@@ -59,7 +63,8 @@ export class ContactSheet {
     async init() {
         try {
             await this.setupSheet();
-            await this.createPlaceholderImages();
+            // Use only the image files, not additional placeholder rectangles
+            await this.createImagesFromSheet();
             this.setupInteraction();
         } catch (error) {
             console.error('Failed to initialize contact sheet:', error);
@@ -107,7 +112,7 @@ export class ContactSheet {
         const imagesToRemove = [];
         this.scene.traverse(object => {
             if (object instanceof THREE.Mesh && 
-                Math.abs(object.position.z + 2) < 0.1 && 
+                Math.abs(object.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 && 
                 object !== this.sheet) {
                 imagesToRemove.push(object);
             }
@@ -465,45 +470,46 @@ export class ContactSheet {
         });
     }
     
+    // Helper method to load textures with proper encoding
+    loadTextureWithProperEncoding(url) {
+        return new Promise((resolve, reject) => {
+            this.textureLoader.load(
+                url,
+                (texture) => {
+                    // Use modern colorSpace property instead of encoding
+                    texture.colorSpace = THREE.SRGBColorSpace;
+                    
+                    console.log(`Successfully loaded texture: ${url}`);
+                    resolve(texture);
+                },
+                undefined,
+                (error) => {
+                    console.error(`Failed to load texture: ${url}`, error);
+                    reject(error);
+                }
+            );
+        });
+    }
+    
     async setupSheet() {
         try {
-            const textureLoader = new THREE.TextureLoader();
-            
             // Improved texture loading with better error handling
-            const sheetTexture = await new Promise((resolve, reject) => {
-                const texturePath = 'images/contact-sheet-placeholder.jpg';
-                
-                textureLoader.load(
-                    texturePath,
-                    (texture) => {
-                        console.log(`Successfully loaded texture: ${texturePath}`);
-                        resolve(texture);
-                    },
-                    (progressEvent) => {
-                        // Optional: Track loading progress
-                        if (progressEvent.lengthComputable) {
-                            const percentComplete = (progressEvent.loaded / progressEvent.total) * 100;
-                            console.log(`Loading texture: ${percentComplete.toFixed(1)}%`);
-                        }
-                    },
-                    (error) => {
-                        console.error(`Failed to load texture: ${texturePath}`, error);
-                        reject(new Error(`Failed to load contact sheet texture: ${error.message}`));
-                    }
-                );
-            });
+            const sheetTexture = await this.loadTextureWithProperEncoding('images/contact-sheet-placeholder.jpg');
             
             const dimensions = this.layout.getSheetDimensions();
             const geometry = new THREE.PlaneGeometry(dimensions.width, dimensions.height);
             
-            // Create the background plane
+            // Create the background plane with simple material settings
             const material = new THREE.MeshBasicMaterial({
                 map: sheetTexture,
                 side: THREE.FrontSide
             });
             
             this.sheet = new THREE.Mesh(geometry, material);
-            this.sheet.position.z = -3;
+            // Use consistent Z position of -2.5 for all sheet elements
+            this.sheet.position.z = -2.5;
+            // Store this Z position as a constant for other components to reference
+            this.SHEET_Z_POSITION = -2.5;
             this.scene.add(this.sheet);
             
         } catch (error) {
@@ -587,68 +593,160 @@ export class ContactSheet {
         return { row: nearestRow, col: nearestCol };
     }
     
-    async createPlaceholderImages() {
+    async createImagesFromSheet() {
         try {
-            const textureLoader = new THREE.TextureLoader();
+            // Get list of image filenames for the current sheet
+            const imageFiles = await this.getSheetImageFiles();
             
-            // Improved texture loading with better error handling
-            const placeholderTexture = await new Promise((resolve, reject) => {
-                const texturePath = 'images/600x900.jpg';
-                
-                textureLoader.load(
-                    texturePath,
-                    (texture) => {
-                        console.log(`Successfully loaded texture: ${texturePath}`);
-                        // Enable texture optimizations
-                        texture.generateMipmaps = true;
-                        texture.minFilter = THREE.LinearMipmapLinearFilter;
-                        texture.magFilter = THREE.LinearFilter;
-                        // Get renderer from scene if available or use default value
-                        const maxAnisotropy = this.scene.renderer 
-                            ? this.scene.renderer.capabilities.getMaxAnisotropy() 
-                            : 1;
-                        texture.anisotropy = maxAnisotropy;
-                        resolve(texture);
-                    },
-                    (progressEvent) => {
-                        // Optional: Track loading progress
-                        if (progressEvent.lengthComputable) {
-                            const percentComplete = (progressEvent.loaded / progressEvent.total) * 100;
-                            console.log(`Loading texture: ${percentComplete.toFixed(1)}%`);
-                        }
-                    },
-                    (error) => {
-                        console.error(`Failed to load texture: ${texturePath}`, error);
-                        reject(new Error(`Failed to load placeholder image texture: ${error.message}`));
-                    }
-                );
-            });
-            
+            // Create a reusable geometry for all images
             const imageDimensions = {
                 width: this.layout.imageWidth * this.layout.scale,
                 height: this.layout.imageHeight * this.layout.scale
             };
-            
             const geometry = new THREE.PlaneGeometry(imageDimensions.width, imageDimensions.height);
             
-            // Create and position all placeholders
+            // Mapping to track which row/col has which image
+            this.imageMapping = [];
+            
+            // Clear existing meshes to prevent overlapping
+            this.clearExistingImageMeshes();
+            
+            // Load and create images in grid
+            const loadingPromises = [];
+            let imageIndex = 0;
+            let successCount = 0;
+            let errorCount = 0;
+            
             for (let row = 0; row < this.layout.rows; row++) {
+                this.imageMapping[row] = [];
+                
                 for (let col = 0; col < this.layout.columns; col++) {
-                    const material = new THREE.MeshBasicMaterial({
-                        map: placeholderTexture
-                    });
+                    // If we've run out of images, stop creating more
+                    if (imageIndex >= imageFiles.length) break;
                     
-                    const imageMesh = new THREE.Mesh(geometry, material);
-                    const position = this.layout.getImagePosition(row, col);
+                    const filename = imageFiles[imageIndex];
+                    this.imageMapping[row][col] = filename;
                     
-                    imageMesh.position.set(position.x, position.y, -2);
-                    this.scene.add(imageMesh);
+                    const texturePath = `images/${this.sheetId}/${filename}`;
+                    
+                    // Create a promise for loading this image with correct settings
+                    const loadPromise = this.loadTextureWithProperEncoding(texturePath)
+                        .then(texture => {
+                            // Create simple material with no special settings
+                            const material = new THREE.MeshBasicMaterial({ 
+                                map: texture,
+                                side: THREE.FrontSide
+                            });
+                            
+                            const mesh = new THREE.Mesh(geometry, material);
+                            
+                            // Position the mesh
+                            const position = this.layout.getImagePosition(row, col);
+                            mesh.position.set(
+                                position.x, 
+                                position.y, 
+                                this.SHEET_Z_POSITION + 0.01
+                            );
+                            
+                            // Store reference to row/col in the mesh for later use
+                            mesh.userData = { row, col, filename, isSheetImage: true };
+                            
+                            // Add to scene
+                            this.scene.add(mesh);
+                            successCount++;
+                        })
+                        .catch(error => {
+                            console.error(`Failed to load image: ${texturePath}`, error);
+                            errorCount++;
+                            
+                            // Create a fallback colored material instead
+                            const fallbackMaterial = new THREE.MeshBasicMaterial({ 
+                                color: 0x333333,
+                                transparent: true,
+                                opacity: 0.8 
+                            });
+                            
+                            const mesh = new THREE.Mesh(geometry, fallbackMaterial);
+                            const position = this.layout.getImagePosition(row, col);
+                            mesh.position.set(position.x, position.y, this.SHEET_Z_POSITION + 0.01);
+                            mesh.userData = { row, col, filename, isPlaceholder: true, isSheetImage: true };
+                            this.scene.add(mesh);
+                        });
+                    
+                    loadingPromises.push(loadPromise);
+                    imageIndex++;
                 }
             }
+            
+            // Wait for all images to load
+            await Promise.all(loadingPromises);
+            console.log(`Loaded ${successCount} images for sheet "${this.sheetId}" (${errorCount} failed)`);
+            
+            // If all images failed, throw an error to be caught
+            if (successCount === 0 && errorCount > 0) {
+                throw new Error(`Failed to load any images for sheet "${this.sheetId}"`);
+            }
+            
         } catch (error) {
-            console.error('Failed to create placeholder images:', error);
+            console.error('Failed to create images:', error);
             throw error;
         }
+    }
+    
+    // Keep the old method name for backward compatibility but have it call the new method
+    async createPlaceholderImages() {
+        // DEPRECATED: This method is kept for backward compatibility
+        // The programmatically generated placeholder rectangles are no longer used
+        // as we're loading actual JPG images instead
+        return this.createImagesFromSheet();
+    }
+    
+    // Helper method to get image files for the current sheet
+    async getSheetImageFiles() {
+        // For now, return hardcoded list of files based on sheet ID
+        if (this.sheetId === 'sheet_one') {
+            return [
+                'Admiralteyskaya.jpg',
+                'Andel.jpg',  // Renamed from Andĕl.jpg
+                'Avtovo.jpg',
+                'Bikás park-portrait.jpg',
+                'Bukharestskaya-portrait.jpg',
+                'Florenc.jpg',
+                'Fővám tér.jpg',
+                'II. János Pál pápa tér-portrait.jpg',
+                'Kálvin tér átszállóalagút-1.jpg',
+                'Kálvin tér átszállóalagút-2.jpg',
+                'Kálvin tér M3 átszállóalagút-portrait.jpg',
+                'Kálvin tér M3.jpg',
+                'Kálvin tér M4.jpg',
+                'Karlovo náměstí.jpg',
+                'Keleti pályaudvar.jpg',
+                'Kirovsky Zavod-portrait.jpg',
+                'Komendantsky Prospekt.jpg',
+                'Krestovsky Ostrov.jpg',
+                'Malostranská.jpg',
+                'Mezhdunarodnaya.jpg',
+                'Nagyvárad tér-portrait.jpg',
+                'Národní třída-1.jpg',
+                'Národní třída-2.jpg',
+                'Narvskaya.jpg',
+                'Obvodny Kanal-portrait.jpg',
+                'Rådhuset.jpg',
+                'Staraya Derevnya.jpg',
+                'Staroměstská-1.jpg',
+                'Staroměstská-2.jpg',
+                'Szent Gellért tér-1.jpg',
+                'Szent Gellért tér-2.jpg',
+                'T-Centralen.jpg',
+                'Újbuda-központ-1.jpg',
+                'Ujbuda-kozpont-2.jpg',  // Renamed from Újbuda-központ-2.jpg
+                'Volkovskaya.jpg',
+                'Zvenigorodskaya.jpg'
+            ];
+        }
+        
+        // In a real application, this could fetch from an API or dynamically from the server
+        return [];
     }
     
     isDesktopOrTablet() {
@@ -662,18 +760,18 @@ export class ContactSheet {
         // First try raycasting specifically for the placeholder image objects
         const allIntersects = this.raycaster.intersectObjects(this.scene.children);
         
-        // Get all image meshes
+        // Get all image meshes - update the Z position check to match our new position
         const imageMeshes = this.scene.children.filter(child => 
             child instanceof THREE.Mesh && 
-            Math.abs(child.position.z + 2) < 0.1 &&
+            Math.abs(child.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 &&
             child.material && 
             child.material.map
         );
         
-        // Check for clicks on image meshes
+        // Check for clicks on image meshes - update Z position check
         const imageIntersects = allIntersects.filter(intersect => 
             intersect.object instanceof THREE.Mesh &&
-            Math.abs(intersect.object.position.z + 2) < 0.1 && 
+            Math.abs(intersect.object.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 && 
             intersect.object.material && 
             intersect.object.material.map
         );
@@ -724,5 +822,51 @@ export class ContactSheet {
                 }
             });
         }
+    }
+    
+    // Clear existing image meshes to prevent overlapping when reloading
+    clearExistingImageMeshes() {
+        // Find and remove all existing image meshes before adding new ones
+        const meshesToRemove = [];
+        
+        this.scene.traverse(object => {
+            if (!(object instanceof THREE.Mesh)) return;
+            
+            // Criteria 1: Has isSheetImage flag (newer implementation)
+            const hasSheetImageFlag = object.userData && object.userData.isSheetImage;
+            
+            // Criteria 2: Is at the expected Z position for images (with some tolerance)
+            const isAtImageZPosition = Math.abs(object.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1;
+            
+            // Criteria 3: Is not the main contact sheet background
+            const isNotSheet = object !== this.sheet;
+            
+            // Criteria 4: Has a material and texture (likely an image)
+            const hasImageMaterial = object.material && 
+                                    (object.material.map || 
+                                     (object.material.color && object.material.transparent));
+            
+            // Remove if it meets criteria that indicate it's an image from any implementation
+            if (isNotSheet && 
+                ((hasSheetImageFlag) || 
+                 (isAtImageZPosition && hasImageMaterial))) {
+                meshesToRemove.push(object);
+                
+                // Log found objects for debugging
+                console.log(`Removing mesh: z=${object.position.z.toFixed(2)}, isSheetImage=${hasSheetImageFlag}`);
+            }
+        });
+        
+        console.log(`Found ${meshesToRemove.length} image meshes to remove`);
+        
+        // Properly dispose of all resources to prevent memory leaks
+        meshesToRemove.forEach(mesh => {
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) {
+                if (mesh.material.map) mesh.material.map.dispose();
+                mesh.material.dispose();
+            }
+            this.scene.remove(mesh);
+        });
     }
 } 
