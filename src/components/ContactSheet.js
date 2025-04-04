@@ -307,7 +307,7 @@ export class ContactSheet {
             this.zoomOut();
         });
         
-        // Handle window resize
+        // Only handle resize for zoomed state
         window.addEventListener('resize', () => {
             if (this.isZoomedIn) {
                 const { size, aspect } = this.calculateZoomFrustum();
@@ -317,16 +317,6 @@ export class ContactSheet {
                 this.camera.right = halfSize * aspect;
                 this.camera.top = halfSize;
                 this.camera.bottom = -halfSize;
-                this.camera.updateProjectionMatrix();
-            } else {
-                const aspect = window.innerWidth / window.innerHeight;
-                const halfHeight = 2;
-                const halfWidth = halfHeight * aspect;
-                
-                this.camera.left = -halfWidth;
-                this.camera.right = halfWidth;
-                this.camera.top = halfHeight;
-                this.camera.bottom = -halfHeight;
                 this.camera.updateProjectionMatrix();
             }
         });
