@@ -28,17 +28,6 @@ export class ContactSheet {
         this.layout = new GridLayout();
         this.state = SheetState.IDLE;
         
-        // Automatically detect environment based on URL hostname
-        // For Vercel deployments, the hostname will include 'vercel.app' or be your custom domain
-        // For local development, it will be localhost or 127.0.0.1
-        this.isVercelDeployment = !window.location.hostname.includes('localhost') && 
-                                 !window.location.hostname.includes('127.0.0.1');
-        
-        // Set image path based on environment
-        this.imagePath = this.isVercelDeployment ? '/images' : '/public/images';
-        console.log(`Detected environment: ${this.isVercelDeployment ? 'Vercel' : 'Local'}`);
-        console.log(`Using image path: ${this.imagePath}`);
-        
         // Store original camera settings
         this.originalFrustum = {
             left: camera.left,
@@ -424,7 +413,7 @@ export class ContactSheet {
             const textureLoader = new THREE.TextureLoader();
             const sheetTexture = await new Promise((resolve, reject) => {
                 textureLoader.load(
-                    `${this.imagePath}/contact-sheet-placeholder.jpg`,
+                    '/images/contact-sheet-placeholder.jpg',
                     (texture) => resolve(texture),
                     undefined,
                     (error) => reject(error)
@@ -530,7 +519,7 @@ export class ContactSheet {
             const textureLoader = new THREE.TextureLoader();
             const placeholderTexture = await new Promise((resolve, reject) => {
                 textureLoader.load(
-                    `${this.imagePath}/600x900.jpg`,
+                    '/images/600x900.jpg',
                     (texture) => resolve(texture),
                     undefined,
                     (error) => reject(error)
