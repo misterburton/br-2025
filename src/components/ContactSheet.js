@@ -62,6 +62,7 @@ export class ContactSheet {
         this.velocityX = 0;
         this.velocityY = 0;
         this.swipeDirection = null;
+        this.isNavigating = false; // Flag to prevent double navigation
         
         // Event listeners to be cleaned up
         this.eventListeners = [];
@@ -241,24 +242,24 @@ export class ContactSheet {
                         canvas.style.cursor = 'default';
                     }
                     
-                    // Handle as a click if we're on desktop/tablet
-                    if (this.isDesktopOrTablet()) {
-                        this.handleAdjacentImageClick(event);
-                    }
+                    // Handle as a click regardless of device type
+                    this.handleAdjacentImageClick(event);
                 }
             }
         });
         
-        // Add separate direct click handler to ensure clicking works reliably
+        // Update the click handler to work on all devices
         this.addEventListener(canvas, 'click', (event) => {
             if (this.state !== SheetState.ZOOMED_IN || 
                 this.state === SheetState.ANIMATING || 
                 this.hasMovedBeyondThreshold) return;
             
-            // Handle as a click on desktop/tablet
-            if (this.isDesktopOrTablet()) {
-                this.handleAdjacentImageClick(event);
-            }
+            // Prevent default behavior and stop propagation to avoid double processing
+            event.preventDefault();
+            event.stopPropagation();
+            
+            // Handle clicks regardless of device type
+            this.handleAdjacentImageClick(event);
         });
         
         // Handle double click/tap to zoom out
@@ -286,6 +287,34 @@ export class ContactSheet {
             }
             
             lastTapTime = currentTime;
+        });
+        
+        // Single tap handler for mobile navigation
+        let singleTapTimer = null;
+        this.addEventListener(canvas, 'touchend', (event) => {
+            if (this.state !== SheetState.ZOOMED_IN || 
+                this.state === SheetState.ANIMATING || 
+                this.hasMovedBeyondThreshold || 
+                this.isDragging) return;
+                
+            // Get touch position
+            if (event.changedTouches && event.changedTouches.length > 0) {
+                const touch = event.changedTouches[0];
+                
+                // Convert touch position to pointer position for raycasting
+                this.pointer.x = (touch.clientX / window.innerWidth) * 2 - 1;
+                this.pointer.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+                this.raycaster.setFromCamera(this.pointer, this.camera);
+                
+                // Delay handling the tap to allow for potential double tap
+                clearTimeout(singleTapTimer);
+                singleTapTimer = setTimeout(() => {
+                    // If sufficient time has passed and we haven't detected a double tap
+                    if (new Date().getTime() - lastTapTime > DOUBLE_TAP_THRESHOLD) {
+                        this.handleAdjacentImageClick(touch); // Pass the touch as event
+                    }
+                }, DOUBLE_TAP_THRESHOLD + 50); // Wait a bit longer than double tap threshold
+            }
         });
         
         // Handle resize for zoomed state
@@ -824,6 +853,10 @@ export class ContactSheet {
     }
     
     handleAdjacentImageClick(event) {
+        // Prevent multiple navigations in quick succession
+        if (this.isNavigating) return;
+        
+        // Update pointer position
         this.updatePointerPosition(event);
         
         // First try raycasting specifically for the placeholder image objects
@@ -881,6 +914,9 @@ export class ContactSheet {
             
             gsap.killTweensOf(this.camera.position);
             
+            // Set navigating flag to prevent double navigation
+            this.isNavigating = true;
+            
             gsap.to(this.camera.position, {
                 x: imagePos.x,
                 y: imagePos.y,
@@ -891,6 +927,11 @@ export class ContactSheet {
                     
                     // Update brightness to highlight the new active image
                     this.setImageBrightness(clickedImage.row, clickedImage.col);
+                    
+                    // Reset navigation flag after animation completes
+                    setTimeout(() => {
+                        this.isNavigating = false;
+                    }, 100);
                 }
             });
         }
@@ -1003,7 +1044,7 @@ export class ContactSheet {
                             r: 1.0,
                             g: 1.0,
                             b: 1.0,
-                            duration: 0.25
+                            duration: 0.35
                         });
                     } else {
                         // Inactive image - darken by using color as a multiplier
