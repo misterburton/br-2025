@@ -21,23 +21,7 @@ export class GridLayout {
         this.columns = 6;
         
         // Calculate scale factor to normalize coordinates
-        this.scale = 1;
-        this.calculateScale();
-    }
-    
-    calculateScale() {
-        // Calculate aspect ratios
-        const sheetAspect = this.sheetWidth / this.sheetHeight;
-        const viewportAspect = window.innerWidth / window.innerHeight;
-        
-        // Base scale on the more constrained dimension
-        if (viewportAspect < sheetAspect) {
-            // Width-constrained viewport (tall/narrow)
-            this.scale = 3.5 / this.sheetWidth;
-        } else {
-            // Height-constrained viewport (short/wide)
-            this.scale = 3.5 / this.sheetHeight;
-        }
+        this.scale = 3.5 / this.sheetWidth; // Base scale on width
     }
     
     getImagePosition(row, col) {
@@ -59,6 +43,13 @@ export class GridLayout {
         return {
             width: this.sheetWidth * this.scale,
             height: this.sheetHeight * this.scale
+        };
+    }
+    
+    getImageDimensions() {
+        return {
+            width: this.imageWidth * this.scale,
+            height: this.imageHeight * this.scale
         };
     }
 } 
