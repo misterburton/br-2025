@@ -15,8 +15,6 @@ export class ContactSheet {
         // Interaction state
         this.raycaster = new THREE.Raycaster();
         this.pointer = new THREE.Vector2();
-        this.swipeStart = null;
-        this.swipeThreshold = 50; // Minimum distance for swipe detection
         
         // Long press handling
         this.longPressTimer = null;
@@ -163,12 +161,6 @@ export class ContactSheet {
         canvas.addEventListener('pointerdown', (event) => {
             event.preventDefault();
             
-            // Initialize swipe tracking
-            this.swipeStart = {
-                x: event.clientX || event.touches[0].clientX,
-                y: event.clientY || event.touches[0].clientY
-            };
-            
             // Handle click/tap
             this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
             this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -191,19 +183,6 @@ export class ContactSheet {
                                 this.zoomOut();
                             }
                         }, this.longPressDuration);
-                    } else if (!this.isTransitioning) {
-                        const relativeX = gridX - this.currentGridX;
-                        const relativeY = gridY - this.currentGridY;
-                        
-                        if (Math.abs(relativeX) <= 1 && Math.abs(relativeY) <= 1) {
-                            const targetX = this.currentGridX + relativeX;
-                            const targetY = this.currentGridY + relativeY;
-                            
-                            if (targetX >= 0 && targetX < this.layout.columns && 
-                                targetY >= 0 && targetY < this.layout.rows) {
-                                this.slideToImage(targetX, targetY);
-                            }
-                        }
                     }
                 } else {
                     const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
@@ -216,56 +195,14 @@ export class ContactSheet {
             }
         });
         
-        // Handle pointer move
-        canvas.addEventListener('pointermove', (event) => {
-            if (!this.isZoomedIn || this.isTransitioning || !this.swipeStart) return;
-            
-            const currentX = event.clientX || event.touches[0].clientX;
-            const currentY = event.clientY || event.touches[0].clientY;
-            
-            const deltaX = currentX - this.swipeStart.x;
-            const deltaY = currentY - this.swipeStart.y;
-            
-            // Calculate distance moved
-            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-            
-            // If we've moved enough to consider it a swipe
-            if (distance > this.swipeThreshold) {
-                let targetX = this.currentGridX;
-                let targetY = this.currentGridY;
-                
-                // Determine direction based on which delta is larger
-                if (Math.abs(deltaX) > Math.abs(deltaY)) {
-                    // Horizontal swipe - right is positive, left is negative
-                    targetX -= Math.sign(deltaX);
-                } else {
-                    // Vertical swipe - down is positive (show image above), up is negative (show image below)
-                    targetY -= Math.sign(deltaY);
-                }
-                
-                // Check if target is within bounds
-                if (targetX >= 0 && targetX < this.layout.columns && 
-                    targetY >= 0 && targetY < this.layout.rows) {
-                    this.slideToImage(targetX, targetY);
-                }
-                
-                // Reset swipe tracking
-                this.swipeStart = null;
-            }
-        });
-        
-        // Handle pointer up/leave
-        const handlePointerEnd = () => {
-            this.swipeStart = null;
+        // Handle pointer up
+        canvas.addEventListener('pointerup', () => {
             this.isLongPressing = false;
             if (this.longPressTimer) {
                 clearTimeout(this.longPressTimer);
                 this.longPressTimer = null;
             }
-        };
-        
-        canvas.addEventListener('pointerup', handlePointerEnd);
-        canvas.addEventListener('pointerleave', handlePointerEnd);
+        });
         
         // Handle hover
         canvas.addEventListener('pointermove', (event) => {
@@ -279,25 +216,5 @@ export class ContactSheet {
         });
         
         canvas.addEventListener('contextmenu', (event) => event.preventDefault());
-    }
-    
-    slideToImage(gridX, gridY) {
-        if (this.isTransitioning) return;
-        this.isTransitioning = true;
-        
-        const imagePos = this.layout.getImagePosition(gridY, gridX);
-        const zoomScale = this.calculateZoomScale();
-        
-        gsap.to(this.sheet.position, {
-            x: imagePos.x * -zoomScale,
-            y: imagePos.y * -zoomScale,
-            duration: 0.6,
-            ease: "power2.out",
-            onComplete: () => {
-                this.currentGridX = gridX;
-                this.currentGridY = gridY;
-                this.isTransitioning = false;
-            }
-        });
     }
 } 

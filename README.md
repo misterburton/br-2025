@@ -8,7 +8,6 @@ The site presents photography work through an interactive contact sheet interfac
 
 - View a full contact sheet grid of images
 - Click/tap to zoom into individual images
-- Swipe/drag between images when zoomed in
 - Smoothly transition between overview and detail states
 
 ## Technical Architecture
@@ -183,7 +182,6 @@ zoomOut() {
 - Console logging for key operations
 
 ## Next Steps
-- Add swipe navigation when zoomed in
 - Create bottom navigation UI
 - Add multiple contact sheets for different sections
 - Add loading states and transitions 
