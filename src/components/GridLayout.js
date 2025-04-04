@@ -45,11 +45,4 @@ export class GridLayout {
             height: this.sheetHeight * this.scale
         };
     }
-    
-    getImageDimensions() {
-        return {
-            width: this.imageWidth * this.scale,
-            height: this.imageHeight * this.scale
-        };
-    }
 } 

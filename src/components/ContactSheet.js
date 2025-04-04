@@ -307,7 +307,7 @@ export class ContactSheet {
             this.zoomOut();
         });
         
-        // Only handle resize for zoomed state
+        // Handle resize for zoomed state
         window.addEventListener('resize', () => {
             if (this.isZoomedIn) {
                 const { size, aspect } = this.calculateZoomFrustum();
