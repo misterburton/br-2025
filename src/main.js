@@ -7,6 +7,7 @@ const engine = new Engine();
 
 // Initialize contact sheet
 const contactSheet = new ContactSheet(engine.scene, engine.camera);
+contactSheet.init().catch(console.error);
 
 // Start the render loop
 engine.start(); 

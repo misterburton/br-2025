@@ -22,8 +22,10 @@ export class ContactSheet {
         this.longPressTimer = null;
         this.longPressDuration = 500;
         this.isLongPressing = false;
-        
-        this.setupSheet();
+    }
+    
+    async init() {
+        await this.setupSheet();
         this.setupInteraction();
     }
     
