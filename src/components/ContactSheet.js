@@ -174,7 +174,6 @@ export class ContactSheet {
         // Handle pointer down
         canvas.addEventListener('pointerdown', (event) => {
             event.preventDefault();
-            console.log('CLICKED!');
             
             // Handle click/tap
             this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -192,8 +191,6 @@ export class ContactSheet {
                 const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
                 
                 if (this.isOverImage(uv)) {
-                    console.log('Zooming in on image:', gridX, gridY);
-                    
                     // Get image position
                     const imagePos = this.layout.getImagePosition(gridY, gridX);
                     
@@ -201,7 +198,7 @@ export class ContactSheet {
                     const { size, aspect } = this.calculateZoomFrustum();
                     const halfSize = size / 2;
                     
-                    // Animate camera position and frustum together
+                    // Animate camera frustum
                     gsap.to(this.camera, {
                         left: -halfSize * aspect,
                         right: halfSize * aspect,
@@ -214,6 +211,7 @@ export class ContactSheet {
                         }
                     });
                     
+                    // Animate camera position
                     gsap.to(this.camera.position, {
                         x: imagePos.x,
                         y: imagePos.y,
@@ -229,7 +227,6 @@ export class ContactSheet {
         // Handle double click to zoom out
         canvas.addEventListener('dblclick', (event) => {
             event.preventDefault();
-            console.log('DOUBLE CLICKED!');
             
             // Animate camera back to center
             gsap.to(this.camera.position, {

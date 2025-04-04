@@ -51,9 +51,7 @@ export class GridLayout {
         
         return {
             x: normalizedX,
-            y: normalizedY,
-            width: this.imageWidth * this.scale,
-            height: this.imageHeight * this.scale
+            y: normalizedY
         };
     }
     
