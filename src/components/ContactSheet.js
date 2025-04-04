@@ -469,11 +469,14 @@ export class ContactSheet {
     }
     
     calculateZoomFrustum() {
-        // We want the image to take up 50% of the viewport height
-        const targetHeight = window.innerHeight * 0.5;
+        // Adjust target height based on device type for optimal viewing
+        // IMPORTANT: For the orthographic camera, a SMALLER frustum size means MORE zoom
+        // For desktop: we want MORE zoom (= smaller frustum)
+        // For mobile: we want LESS zoom (= larger frustum)
+        const targetHeightPercentage = this.isMobile() ? 0.65 : 0.35; 
+        const targetHeight = window.innerHeight * targetHeightPercentage;
         
         // Calculate the frustum size needed to achieve this
-        // The image height is 900px, and we want it to be targetHeight pixels tall
         const frustumSize = (targetHeight / 900) * 2; // *2 because frustum is total height
         
         return {
@@ -789,7 +792,13 @@ export class ContactSheet {
     
     isDesktopOrTablet() {
         // Simple check for desktop or tablet based on screen size
+        // Updated to be consistent with our zoom calculations
         return window.innerWidth >= 768;
+    }
+    
+    isMobile() {
+        // Simple check for mobile devices based on screen size
+        return window.innerWidth < 768;
     }
     
     // Update camera frustum on window resize
