@@ -72,6 +72,10 @@ export class ContactSheet {
         
         // Sheet Z position constant
         this.SHEET_Z_POSITION = -2.5;
+
+        // Info button
+        this.infoButton = null;
+        this.createInfoButton();
     }
     
     // Main initialization method
@@ -94,6 +98,12 @@ export class ContactSheet {
     dispose() {
         // First clean up event listeners
         this.removeEventListeners();
+        
+        // Remove info button from DOM
+        if (this.infoButton && this.infoButton.parentNode) {
+            this.infoButton.parentNode.removeChild(this.infoButton);
+        }
+        this.infoButton = null;
         
         // Dispose of THREE.js objects to prevent memory leaks
         this.disposeThreeJsObjects();
@@ -228,6 +238,14 @@ export class ContactSheet {
         const currentTime = performance.now();
         const deltaTime = currentTime - this.lastTime;
         
+        // Hide info button during drag
+        if (this.infoButton) {
+            this.infoButton.style.opacity = '0';
+            setTimeout(() => {
+                this.infoButton.style.display = 'none';
+            }, 200);
+        }
+
         this.velocityX = (event.clientX - this.lastX) / deltaTime;
         this.velocityY = (event.clientY - this.lastY) / deltaTime;
         
@@ -279,7 +297,17 @@ export class ContactSheet {
         }
         
         // Don't handle as swipe if we didn't move beyond the drag threshold
-        if (!this.hasMovedBeyondThreshold) return;
+        if (!this.hasMovedBeyondThreshold) {
+            // Show info button again if we didn't actually drag
+            if (this.infoButton && this.state === SheetState.ZOOMED_IN) {
+                this.updateInfoButtonPosition();
+                this.infoButton.style.display = 'block';
+                setTimeout(() => {
+                    this.infoButton.style.opacity = '1';
+                }, 50);
+            }
+            return;
+        }
         
         const totalDeltaX = event.clientX - this.startX;
         const totalDeltaY = event.clientY - this.startY;
@@ -328,6 +356,14 @@ export class ContactSheet {
                 // to prevent accidental clicks
                 setTimeout(() => {
                     this.state = SheetState.ZOOMED_IN;
+                    // Show info button after state is set
+                    if (this.infoButton) {
+                        this.updateInfoButtonPosition();
+                        this.infoButton.style.display = 'block';
+                        setTimeout(() => {
+                            this.infoButton.style.opacity = '1';
+                        }, 50);
+                    }
                 }, 150); // 150ms cooldown after animation ends
             }
         });
@@ -417,6 +453,15 @@ export class ContactSheet {
                     // to prevent accidental clicks
                     setTimeout(() => {
                         this.state = SheetState.ZOOMED_IN;
+                        
+                        // Show info button after state is set
+                        if (this.infoButton) {
+                            this.updateInfoButtonPosition();
+                            this.infoButton.style.display = 'block';
+                            setTimeout(() => {
+                                this.infoButton.style.opacity = '1';
+                            }, 50);
+                        }
                         
                         // Reset navigation flag after animation completes and cooldown period
                         this.isNavigating = false;
@@ -560,6 +605,14 @@ export class ContactSheet {
         const isSubsequentMovement = this.state === SheetState.ZOOMED_IN;
         this.state = SheetState.ANIMATING;
         
+        // Hide info button during transition
+        if (this.infoButton) {
+            this.infoButton.style.opacity = '0';
+            setTimeout(() => {
+                this.infoButton.style.display = 'none';
+            }, 200);
+        }
+        
         // Animate camera frustum
         gsap.to(this.camera, {
             left: -halfSize * aspect,
@@ -584,8 +637,14 @@ export class ContactSheet {
                 this.currentImage = { row, col };
                 this.state = SheetState.ZOOMED_IN;
                 
-                // We no longer need to set brightness here as it's already
-                // set at the beginning of the animation for a smoother effect
+                // Show and fade in info button after zoom completes
+                if (this.infoButton) {
+                    this.updateInfoButtonPosition();
+                    this.infoButton.style.display = 'block';
+                    setTimeout(() => {
+                        this.infoButton.style.opacity = '1';
+                    }, 50);
+                }
             }
         });
         
@@ -605,6 +664,14 @@ export class ContactSheet {
     // Zoom out to show the entire sheet
     zoomOut() {
         this.state = SheetState.ANIMATING;
+        
+        // Fade out info button
+        if (this.infoButton) {
+            this.infoButton.style.opacity = '0';
+            setTimeout(() => {
+                this.infoButton.style.display = 'none';
+            }, 200);
+        }
         
         // Reset image brightness as we zoom out
         this.resetImageBrightness();
@@ -875,6 +942,11 @@ export class ContactSheet {
                 top: halfHeight,
                 bottom: -halfHeight
             };
+
+            // Update info button position if it's visible
+            if (this.infoButton && this.infoButton.style.display !== 'none') {
+                requestAnimationFrame(() => this.updateInfoButtonPosition());
+            }
         }
     }
     
@@ -1182,7 +1254,63 @@ export class ContactSheet {
                 this.camera.top = halfSize;
                 this.camera.bottom = -halfSize;
                 this.camera.updateProjectionMatrix();
+
+                // Update info button position after camera update
+                if (this.infoButton) {
+                    this.updateInfoButtonPosition();
+                }
             }
         });
+    }
+
+    createInfoButton() {
+        // Create the info button element
+        const button = document.createElement('button');
+        button.innerHTML = 'i';
+        button.style.cssText = `
+            position: fixed;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            color: #000;
+            font-family: serif;
+            font-style: italic;
+            font-size: 20px;
+            cursor: pointer;
+            display: none;
+            z-index: 1000;
+            transition: all 0.2s ease;
+            transform: translate(-50%, -50%);
+        `;
+        document.body.appendChild(button);
+        this.infoButton = button;
+    }
+
+    updateInfoButtonPosition() {
+        if (!this.infoButton || this.state !== SheetState.ZOOMED_IN) return;
+
+        const imagePos = this.layout.getImagePosition(this.currentImage.row, this.currentImage.col);
+        const imageDims = {
+            width: this.layout.imageWidth * this.layout.scale,
+            height: this.layout.imageHeight * this.layout.scale
+        };
+
+        // Convert 3D position to screen coordinates - position at bottom right with minimal margin
+        const vector = new THREE.Vector3(
+            imagePos.x + (imageDims.width / 2) - 0.04, // Tiny margin from right edge
+            imagePos.y - (imageDims.height / 2) + 0.04, // Tiny margin from bottom edge
+            this.SHEET_Z_POSITION
+        );
+        vector.project(this.camera);
+
+        // Convert to screen coordinates
+        const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+
+        // Position button
+        this.infoButton.style.left = x + 'px';
+        this.infoButton.style.top = y + 'px';
     }
 } 
