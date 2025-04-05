@@ -5,6 +5,7 @@ const DOUBLE_TAP_THRESHOLD = 300; // ms
 const SWIPE_VELOCITY_THRESHOLD = 0.3;
 const SWIPE_DISTANCE_THRESHOLD = 50; // pixels
 const DRAG_THRESHOLD = 5; // pixels - distance before a click becomes a drag
+const PINCH_THRESHOLD = 20; // pixels - minimum pinch distance to trigger zoom out
 const ANIMATION_DURATIONS = {
     INITIAL_ZOOM: 1,
     SUBSEQUENT_MOVEMENT: 0.3,
@@ -23,6 +24,69 @@ const SheetState = {
 export function setupSheetInteraction(sheet) {
     const canvas = document.querySelector('canvas');
     if (!canvas) return;
+    
+    // Add pinch state tracking
+    sheet.isPinching = false;
+    sheet.initialPinchDistance = 0;
+    
+    // Add pinch gesture handlers
+    sheet.addEventListener(canvas, 'touchstart', (event) => {
+        if (sheet.state !== SheetState.ZOOMED_IN || sheet.state === SheetState.ANIMATING) return;
+        
+        if (event.touches.length === 2) {
+            // Prevent other touch interactions while pinching
+            event.preventDefault();
+            
+            // Calculate initial distance between touch points
+            const touch1 = event.touches[0];
+            const touch2 = event.touches[1];
+            sheet.initialPinchDistance = Math.hypot(
+                touch2.clientX - touch1.clientX,
+                touch2.clientY - touch1.clientY
+            );
+            sheet.isPinching = true;
+            
+            // Prevent drag from starting
+            sheet.isDragging = false;
+        }
+    });
+    
+    sheet.addEventListener(canvas, 'touchmove', (event) => {
+        if (!sheet.isPinching || sheet.state !== SheetState.ZOOMED_IN || sheet.state === SheetState.ANIMATING) return;
+        
+        if (event.touches.length === 2) {
+            event.preventDefault();
+            
+            const touch1 = event.touches[0];
+            const touch2 = event.touches[1];
+            const currentDistance = Math.hypot(
+                touch2.clientX - touch1.clientX,
+                touch2.clientY - touch1.clientY
+            );
+            
+            // If pinch distance decreased more than threshold, trigger zoom out
+            if (sheet.initialPinchDistance - currentDistance > PINCH_THRESHOLD) {
+                sheet.isPinching = false;
+                sheet.zoomOut();
+            }
+        }
+    });
+    
+    sheet.addEventListener(canvas, 'touchend', (event) => {
+        if (sheet.isPinching) {
+            event.preventDefault();
+            sheet.isPinching = false;
+            sheet.initialPinchDistance = 0;
+        }
+    });
+    
+    sheet.addEventListener(canvas, 'touchcancel', (event) => {
+        if (sheet.isPinching) {
+            event.preventDefault();
+            sheet.isPinching = false;
+            sheet.initialPinchDistance = 0;
+        }
+    });
     
     // Add click flag to track if we've dragged past threshold
     sheet.hasMovedBeyondThreshold = false;
@@ -185,4 +249,4 @@ export function setupSheetInteraction(sheet) {
 }
 
 // Export constants for use in other files
-export { DOUBLE_TAP_THRESHOLD, SWIPE_VELOCITY_THRESHOLD, SWIPE_DISTANCE_THRESHOLD, DRAG_THRESHOLD, ANIMATION_DURATIONS, SheetState }; 
+export { DOUBLE_TAP_THRESHOLD, SWIPE_VELOCITY_THRESHOLD, SWIPE_DISTANCE_THRESHOLD, DRAG_THRESHOLD, PINCH_THRESHOLD, ANIMATION_DURATIONS, SheetState }; 
