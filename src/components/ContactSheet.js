@@ -61,7 +61,6 @@ export class ContactSheet {
         this.velocityX = 0;
         this.velocityY = 0;
         this.swipeDirection = null;
-        this.isNavigating = false; // Flag to prevent double navigation
         
         // Event listeners to be cleaned up
         this.eventListeners = [];
@@ -84,11 +83,8 @@ export class ContactSheet {
     async init() {
         try {
             await this.setupSheet();
-            // Use only the image files, not additional placeholder rectangles
             await this.createImagesFromSheet();
-            // Ensure all images start at full brightness
             this.resetImageBrightness();
-            // We're using setupSheetInteraction from the external module, not the local setupInteraction
             setupSheetInteraction(this);
         } catch (error) {
             console.error('Failed to initialize contact sheet:', error);
@@ -96,77 +92,56 @@ export class ContactSheet {
         }
     }
     
+    async setupSheet() {
+        try {
+            const sheetTexture = await this.loadTextureWithProperEncoding('images/contact-sheet-placeholder.jpg');
+            
+            const dimensions = this.layout.getSheetDimensions();
+            const geometry = new THREE.PlaneGeometry(dimensions.width, dimensions.height);
+            
+            const material = new THREE.MeshBasicMaterial({
+                map: sheetTexture,
+                side: THREE.FrontSide
+            });
+            
+            this.sheet = new THREE.Mesh(geometry, material);
+            this.sheet.position.z = -2.5;
+            this.SHEET_Z_POSITION = -2.5;
+            this.scene.add(this.sheet);
+            
+        } catch (error) {
+            console.error('Failed to setup contact sheet:', error);
+            throw error;
+        }
+    }
+    
     // Consolidated cleanup/dispose method
     dispose() {
-        // First clean up event listeners
         this.removeEventListeners();
         
-        // Remove info button from DOM
         if (this.infoButton && this.infoButton.parentNode) {
             this.infoButton.parentNode.removeChild(this.infoButton);
         }
         this.infoButton = null;
         
-        // Dispose of THREE.js objects to prevent memory leaks
         this.disposeThreeJsObjects();
         
-        // Kill any active animations
         if (window.gsap) {
             window.gsap.killTweensOf(this.camera);
             window.gsap.killTweensOf(this.camera.position);
         }
 
-        // Clean up detail view
         if (this.detailView) {
-            // Assuming DetailView has a dispose method
             this.detailView.dispose();
         }
     }
     
     // Split out event listener cleanup for clarity
     removeEventListeners() {
-        // Remove all event listeners
         this.eventListeners.forEach(({ element, type, handler }) => {
             element.removeEventListener(type, handler);
         });
         this.eventListeners = [];
-    }
-    
-    // Properly dispose THREE.js objects
-    disposeThreeJsObjects() {
-        // Dispose of sheet mesh
-        if (this.sheet) {
-            if (this.sheet.geometry) this.sheet.geometry.dispose();
-            if (this.sheet.material) {
-                if (this.sheet.material.map) this.sheet.material.map.dispose();
-                this.sheet.material.dispose();
-            }
-            this.scene.remove(this.sheet);
-        }
-        
-        // Find and dispose all image meshes
-        const imagesToRemove = [];
-        this.scene.traverse(object => {
-            if (object instanceof THREE.Mesh && 
-                Math.abs(object.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 && 
-                object !== this.sheet) {
-                imagesToRemove.push(object);
-            }
-        });
-        
-        imagesToRemove.forEach(mesh => {
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) {
-                if (mesh.material.map) mesh.material.map.dispose();
-                mesh.material.dispose();
-            }
-            this.scene.remove(mesh);
-        });
-    }
-    
-    // Maintain backward compatibility
-    cleanup() {
-        this.dispose();
     }
     
     // Add passive option for touch and wheel events
@@ -210,7 +185,6 @@ export class ContactSheet {
         this.swipeDirection = null;
         event.preventDefault();
         
-        // Set grabbing cursor
         const canvas = document.querySelector('canvas');
         if (canvas) {
             canvas.style.cursor = 'grabbing';
@@ -225,19 +199,13 @@ export class ContactSheet {
         const image = this.getImageAtPointer();
         if (image) {
             const imagePos = this.layout.getImagePosition(image.row, image.col);
-            
-            // Start the zoom animation
             this.zoomToImage(imagePos, image.row, image.col);
             
-            // Add a subtle delay before starting brightness transitions
-            // This creates a more natural sequence where the zoom begins 
-            // slightly before the darkening effect
             setTimeout(() => {
-                // Only proceed if we're still animating (not cancelled)
                 if (this.state === SheetState.ANIMATING) {
                     this.setImageBrightness(image.row, image.col);
                 }
-            }, 250); // 250ms delay - adjust as needed for the right feel
+            }, 250);
         }
     }
     
@@ -246,8 +214,8 @@ export class ContactSheet {
         const currentTime = performance.now();
         const deltaTime = currentTime - this.lastTime;
         
-        // Hide info button during drag
-        if (this.infoButton) {
+        // Only hide info button if we've moved beyond threshold
+        if (this.hasMovedBeyondThreshold && this.infoButton) {
             this.infoButton.style.opacity = '0';
             setTimeout(() => {
                 this.infoButton.style.display = 'none';
@@ -270,7 +238,6 @@ export class ContactSheet {
         if (this.swipeDirection === 'horizontal') {
             this.camera.position.x -= deltaX;
             
-            // Move gradient background with parallax effect
             if (this.gradientBackground) {
                 const parallaxFactor = 0.15;
                 this.gradientBackground.position.x -= deltaX * parallaxFactor;
@@ -278,7 +245,6 @@ export class ContactSheet {
         } else {
             this.camera.position.y += deltaY;
             
-            // Move gradient background with parallax effect
             if (this.gradientBackground) {
                 const parallaxFactor = 0.15;
                 this.gradientBackground.position.y += deltaY * parallaxFactor;
@@ -294,7 +260,6 @@ export class ContactSheet {
     handleDragEnd(event) {
         this.isDragging = false;
         
-        // Reset cursor based on whether we're over an image
         const canvas = document.querySelector('canvas');
         if (canvas) {
             this.updatePointerPosition(event);
@@ -304,9 +269,7 @@ export class ContactSheet {
                 : 'default';
         }
         
-        // Don't handle as swipe if we didn't move beyond the drag threshold
         if (!this.hasMovedBeyondThreshold) {
-            // Show info button again if we didn't actually drag
             if (this.infoButton && this.state === SheetState.ZOOMED_IN) {
                 this.updateInfoButtonPosition();
                 this.infoButton.style.display = 'block';
@@ -346,10 +309,8 @@ export class ContactSheet {
         
         gsap.killTweensOf(this.camera.position);
         
-        // Explicitly set state to ANIMATING to block any interactions
         this.state = SheetState.ANIMATING;
         
-        // Start brightness transition immediately, synchronized with position animation
         this.setImageBrightness(targetImage.row, targetImage.col);
         
         gsap.to(this.camera.position, {
@@ -360,11 +321,8 @@ export class ContactSheet {
             onComplete: () => {
                 this.currentImage = targetImage;
                 
-                // Add a small cooldown period after animation completes
-                // to prevent accidental clicks
                 setTimeout(() => {
                     this.state = SheetState.ZOOMED_IN;
-                    // Show info button after state is set
                     if (this.infoButton) {
                         this.updateInfoButtonPosition();
                         this.infoButton.style.display = 'block';
@@ -372,82 +330,44 @@ export class ContactSheet {
                             this.infoButton.style.opacity = '1';
                         }, 50);
                     }
-                }, 150); // 150ms cooldown after animation ends
+                }, 150);
             }
         });
     }
     
     // Handle clicking on an adjacent image when zoomed in
     handleAdjacentImageClick(event) {
-        // Prevent multiple navigations in quick succession
-        if (this.isNavigating) return;
-        
-        // Update pointer position
         this.updatePointerPosition(event);
         
-        // First try raycasting specifically for the placeholder image objects
-        const allIntersects = this.raycaster.intersectObjects(this.scene.children);
+        const image = this.getImageAtPointer();
+        if (!image) return;
         
-        // Get all image meshes - update the Z position check to match our new position
-        const imageMeshes = this.scene.children.filter(child => 
-            child instanceof THREE.Mesh && 
-            Math.abs(child.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 &&
-            child.material && 
-            child.material.map
-        );
-        
-        // Check for clicks on image meshes - update Z position check
-        const imageIntersects = allIntersects.filter(intersect => 
-            intersect.object instanceof THREE.Mesh &&
-            Math.abs(intersect.object.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 && 
-            intersect.object.material && 
-            intersect.object.material.map
-        );
-        
-        let clickedImage = null;
-        
-        if (imageIntersects.length > 0) {
-            // Find which image was clicked based on the position
-            const clickedObject = imageIntersects[0].object;
-            const clickedPosition = clickedObject.position;
-            
-            // Find row and col of the clicked image
-            clickedImage = this.findNearestImage(clickedPosition.x, clickedPosition.y);
-        } 
-        else {
-            // Fallback: Use screen position to determine nearest image
-            // Convert screen to world coordinates
-            const vector = new THREE.Vector3();
-            vector.set(this.pointer.x, this.pointer.y, 0.5);
-            vector.unproject(this.camera);
-            
-            // Find the nearest image to this position
-            clickedImage = this.findNearestImage(vector.x, vector.y);
+        // If clicking the current image, do nothing
+        if (image.row === this.currentImage.row && image.col === this.currentImage.col) {
+            return;
         }
-        
-        if (!clickedImage) return;
         
         // Check if the clicked image is adjacent to the current one
         const isAdjacent = 
-            (Math.abs(clickedImage.row - this.currentImage.row) <= 1 &&
-             Math.abs(clickedImage.col - this.currentImage.col) <= 1) &&
-            // Exclude clicking on the current image
-            !(clickedImage.row === this.currentImage.row && 
-              clickedImage.col === this.currentImage.col);
+            (Math.abs(image.row - this.currentImage.row) <= 1 &&
+             Math.abs(image.col - this.currentImage.col) <= 1);
         
         if (isAdjacent) {
-            const imagePos = this.layout.getImagePosition(clickedImage.row, clickedImage.col);
+            const imagePos = this.layout.getImagePosition(image.row, image.col);
             
             gsap.killTweensOf(this.camera.position);
             
-            // Set navigating flag to prevent double navigation
-            this.isNavigating = true;
-            
-            // Explicitly set state to ANIMATING to block any interactions
             this.state = SheetState.ANIMATING;
             
-            // Start brightness transition immediately, synchronized with position animation
-            this.setImageBrightness(clickedImage.row, clickedImage.col);
+            // Hide info button before animation only if we're actually navigating
+            if (this.infoButton) {
+                this.infoButton.style.opacity = '0';
+                setTimeout(() => {
+                    this.infoButton.style.display = 'none';
+                }, 200);
+            }
+            
+            this.setImageBrightness(image.row, image.col);
             
             gsap.to(this.camera.position, {
                 x: imagePos.x,
@@ -455,14 +375,10 @@ export class ContactSheet {
                 duration: ANIMATION_DURATIONS.SUBSEQUENT_MOVEMENT,
                 ease: "power2.out",
                 onComplete: () => {
-                    this.currentImage = clickedImage;
+                    this.currentImage = image;
                     
-                    // Add a small cooldown period after animation completes
-                    // to prevent accidental clicks
                     setTimeout(() => {
                         this.state = SheetState.ZOOMED_IN;
-                        
-                        // Show info button after state is set
                         if (this.infoButton) {
                             this.updateInfoButtonPosition();
                             this.infoButton.style.display = 'block';
@@ -470,61 +386,128 @@ export class ContactSheet {
                                 this.infoButton.style.opacity = '1';
                             }, 50);
                         }
-                        
-                        // Reset navigation flag after animation completes and cooldown period
-                        this.isNavigating = false;
-                    }, 150); // 150ms cooldown after animation ends
+                    }, 150);
                 }
             });
         }
     }
     
-    // Helper method to load textures with proper encoding
-    loadTextureWithProperEncoding(url) {
-        return new Promise((resolve, reject) => {
-            this.textureLoader.load(
-                url,
-                (texture) => {
-                    // Use modern colorSpace property instead of encoding
-                    texture.colorSpace = THREE.SRGBColorSpace;
-                    
-                    console.log(`Successfully loaded texture: ${url}`);
-                    resolve(texture);
-                },
-                undefined,
-                (error) => {
-                    console.error(`Failed to load texture: ${url}`, error);
-                    reject(error);
-                }
-            );
+    createInfoButton() {
+        const button = document.createElement('button');
+        button.innerHTML = 'i';
+        button.style.cssText = `
+            position: fixed;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            color: #000;
+            font-family: serif;
+            font-style: italic;
+            font-size: 20px;
+            cursor: pointer;
+            display: none;
+            z-index: 1000;
+            transition: all 0.2s ease;
+            transform: translate(-50%, -50%);
+        `;
+
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.showDetailView();
+        });
+
+        document.body.appendChild(button);
+        this.infoButton = button;
+    }
+
+    updateInfoButtonPosition() {
+        if (!this.infoButton || this.state !== SheetState.ZOOMED_IN) return;
+
+        const imagePos = this.layout.getImagePosition(this.currentImage.row, this.currentImage.col);
+        const imageDims = {
+            width: this.layout.imageWidth * this.layout.scale,
+            height: this.layout.imageHeight * this.layout.scale
+        };
+
+        const vector = new THREE.Vector3(
+            imagePos.x + (imageDims.width / 2) - 0.04,
+            imagePos.y - (imageDims.height / 2) + 0.04,
+            this.SHEET_Z_POSITION
+        );
+        vector.project(this.camera);
+
+        const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+
+        this.infoButton.style.left = x + 'px';
+        this.infoButton.style.top = y + 'px';
+    }
+
+    showDetailView() {
+        if (this.state !== SheetState.ZOOMED_IN) return;
+
+        const filename = this.imageMapping[this.currentImage.row][this.currentImage.col];
+        const imageData = {
+            filename: filename,
+            url: `images/${this.sheetId}/${filename}`,
+        };
+
+        if (this.infoButton) {
+            this.infoButton.style.opacity = '0';
+            setTimeout(() => {
+                this.infoButton.style.display = 'none';
+            }, 200);
+        }
+
+        this.detailView.show(imageData, this.camera, () => {
+            if (this.infoButton) {
+                this.updateInfoButtonPosition();
+                this.infoButton.style.display = 'block';
+                setTimeout(() => {
+                    this.infoButton.style.opacity = '1';
+                }, 50);
+            }
         });
     }
     
-    async setupSheet() {
-        try {
-            // Improved texture loading with better error handling
-            const sheetTexture = await this.loadTextureWithProperEncoding('images/contact-sheet-placeholder.jpg');
-            
-            const dimensions = this.layout.getSheetDimensions();
-            const geometry = new THREE.PlaneGeometry(dimensions.width, dimensions.height);
-            
-            // Create the background plane with simple material settings
-            const material = new THREE.MeshBasicMaterial({
-                map: sheetTexture,
-                side: THREE.FrontSide
-            });
-            
-            this.sheet = new THREE.Mesh(geometry, material);
-            // Use consistent Z position of -2.5 for all sheet elements
-            this.sheet.position.z = -2.5;
-            // Store this Z position as a constant for other components to reference
-            this.SHEET_Z_POSITION = -2.5;
-            this.scene.add(this.sheet);
-            
-        } catch (error) {
-            console.error('Failed to setup contact sheet:', error);
-            throw error;
+    // Properly dispose THREE.js objects
+    disposeThreeJsObjects() {
+        // Dispose of sheet mesh
+        if (this.sheet) {
+            if (this.sheet.geometry) this.sheet.geometry.dispose();
+            if (this.sheet.material) {
+                if (this.sheet.material.map) this.sheet.material.map.dispose();
+                this.sheet.material.dispose();
+            }
+            this.scene.remove(this.sheet);
         }
+        
+        // Find and dispose all image meshes
+        const imagesToRemove = [];
+        this.scene.traverse(object => {
+            if (object instanceof THREE.Mesh && 
+                Math.abs(object.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 && 
+                object !== this.sheet) {
+                imagesToRemove.push(object);
+            }
+        });
+        
+        imagesToRemove.forEach(mesh => {
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) {
+                if (mesh.material.map) mesh.material.map.dispose();
+                mesh.material.dispose();
+            }
+            this.scene.remove(mesh);
+        });
+    }
+    
+    // Maintain backward compatibility
+    cleanup() {
+        this.dispose();
     }
     
     isOverImage(uv) {
@@ -1271,94 +1254,23 @@ export class ContactSheet {
         });
     }
 
-    createInfoButton() {
-        // Create the info button element
-        const button = document.createElement('button');
-        button.innerHTML = 'i';
-        button.style.cssText = `
-            position: fixed;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.8);
-            border: none;
-            color: #000;
-            font-family: serif;
-            font-style: italic;
-            font-size: 20px;
-            cursor: pointer;
-            display: none;
-            z-index: 1000;
-            transition: all 0.2s ease;
-            transform: translate(-50%, -50%);
-        `;
-
-        // Add click handler for detail view
-        button.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.showDetailView();
-        });
-
-        document.body.appendChild(button);
-        this.infoButton = button;
-    }
-
-    updateInfoButtonPosition() {
-        if (!this.infoButton || this.state !== SheetState.ZOOMED_IN) return;
-
-        const imagePos = this.layout.getImagePosition(this.currentImage.row, this.currentImage.col);
-        const imageDims = {
-            width: this.layout.imageWidth * this.layout.scale,
-            height: this.layout.imageHeight * this.layout.scale
-        };
-
-        // Convert 3D position to screen coordinates - position at bottom right with minimal margin
-        const vector = new THREE.Vector3(
-            imagePos.x + (imageDims.width / 2) - 0.04, // Tiny margin from right edge
-            imagePos.y - (imageDims.height / 2) + 0.04, // Tiny margin from bottom edge
-            this.SHEET_Z_POSITION
-        );
-        vector.project(this.camera);
-
-        // Convert to screen coordinates
-        const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
-        const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
-
-        // Position button
-        this.infoButton.style.left = x + 'px';
-        this.infoButton.style.top = y + 'px';
-    }
-
-    showDetailView() {
-        if (this.state !== SheetState.ZOOMED_IN) return;
-
-        // Get current image data
-        const filename = this.imageMapping[this.currentImage.row][this.currentImage.col];
-        const imageData = {
-            filename: filename,
-            url: `images/${this.sheetId}/${filename}`,
-            // You can add more metadata here as needed
-        };
-
-        // Hide info button during detail view
-        if (this.infoButton) {
-            this.infoButton.style.opacity = '0';
-            setTimeout(() => {
-                this.infoButton.style.display = 'none';
-            }, 200);
-        }
-
-        // Show detail view with close handler
-        this.detailView.show(imageData, this.camera, () => {
-            // On close callback
-            if (this.infoButton) {
-                this.updateInfoButtonPosition();
-                this.infoButton.style.display = 'block';
-                setTimeout(() => {
-                    this.infoButton.style.opacity = '1';
-                }, 50);
-            }
+    loadTextureWithProperEncoding(url) {
+        return new Promise((resolve, reject) => {
+            this.textureLoader.load(
+                url,
+                (texture) => {
+                    // Use modern colorSpace property instead of encoding
+                    texture.colorSpace = THREE.SRGBColorSpace;
+                    
+                    console.log(`Successfully loaded texture: ${url}`);
+                    resolve(texture);
+                },
+                undefined,
+                (error) => {
+                    console.error(`Failed to load texture: ${url}`, error);
+                    reject(error);
+                }
+            );
         });
     }
 } 
