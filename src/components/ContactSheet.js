@@ -5,6 +5,7 @@ import { ImageLoader } from './ImageLoader.js';
 import { SheetAnimation } from './SheetAnimation.js';
 import { ResourceManager, clearExistingImageMeshes } from './ResourceManagement.js';
 import * as SheetUtils from './SheetUtils.js';
+import { DetailView } from './DetailView.js';
 
 // Constants
 const DOUBLE_TAP_THRESHOLD = 300; // ms
@@ -69,6 +70,7 @@ export class ContactSheet {
         this.imageLoader = new ImageLoader();
         this.animation = new SheetAnimation(camera, gradientBackground);
         this.resourceManager = new ResourceManager();
+        this.detailView = new DetailView();
         
         // Sheet Z position constant
         this.SHEET_Z_POSITION = -2.5;
@@ -112,6 +114,12 @@ export class ContactSheet {
         if (window.gsap) {
             window.gsap.killTweensOf(this.camera);
             window.gsap.killTweensOf(this.camera.position);
+        }
+
+        // Clean up detail view
+        if (this.detailView) {
+            // Assuming DetailView has a dispose method
+            this.detailView.dispose();
         }
     }
     
@@ -1284,6 +1292,14 @@ export class ContactSheet {
             transition: all 0.2s ease;
             transform: translate(-50%, -50%);
         `;
+
+        // Add click handler for detail view
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.showDetailView();
+        });
+
         document.body.appendChild(button);
         this.infoButton = button;
     }
@@ -1312,5 +1328,37 @@ export class ContactSheet {
         // Position button
         this.infoButton.style.left = x + 'px';
         this.infoButton.style.top = y + 'px';
+    }
+
+    showDetailView() {
+        if (this.state !== SheetState.ZOOMED_IN) return;
+
+        // Get current image data
+        const filename = this.imageMapping[this.currentImage.row][this.currentImage.col];
+        const imageData = {
+            filename: filename,
+            url: `images/${this.sheetId}/${filename}`,
+            // You can add more metadata here as needed
+        };
+
+        // Hide info button during detail view
+        if (this.infoButton) {
+            this.infoButton.style.opacity = '0';
+            setTimeout(() => {
+                this.infoButton.style.display = 'none';
+            }, 200);
+        }
+
+        // Show detail view with close handler
+        this.detailView.show(imageData, this.camera, () => {
+            // On close callback
+            if (this.infoButton) {
+                this.updateInfoButtonPosition();
+                this.infoButton.style.display = 'block';
+                setTimeout(() => {
+                    this.infoButton.style.opacity = '1';
+                }, 50);
+            }
+        });
     }
 } 
