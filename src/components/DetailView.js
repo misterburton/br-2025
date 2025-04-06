@@ -9,7 +9,6 @@ export class DetailView {
             width: 100%;
             height: 100%;
             background-color: black;
-            overflow-y: auto;
             z-index: 1000;
             opacity: 0;
             pointer-events: none;
@@ -44,7 +43,7 @@ export class DetailView {
             color: white;
             font-size: 24px;
             cursor: pointer;
-            z-index: 1001;
+            z-index: 1002;
             opacity: 0;
             transform: scale(0.9);
         `;
@@ -54,10 +53,12 @@ export class DetailView {
         this.content.style.cssText = `
             position: relative;
             width: 100%;
+            height: 100%;
             display: flex;
             flex-direction: column;
             opacity: 0;
             z-index: 1;
+            overflow-y: auto;
         `;
 
         // Create image
@@ -105,8 +106,8 @@ export class DetailView {
         this.content.appendChild(this.inquireButton);
         this.container.appendChild(this.background);
         this.container.appendChild(this.content);
-        this.container.appendChild(this.closeButton);
         document.body.appendChild(this.container);
+        document.body.appendChild(this.closeButton);
 
         // Event handlers
         this.closeButton.addEventListener('click', () => this.hide());
