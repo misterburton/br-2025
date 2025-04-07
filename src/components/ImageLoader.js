@@ -14,12 +14,11 @@ export class ImageLoader {
                     // Use modern colorSpace property instead of encoding
                     texture.colorSpace = THREE.SRGBColorSpace;
                     
-                    console.log(`Successfully loaded texture: ${url}`);
                     resolve(texture);
                 },
                 undefined,
                 (error) => {
-                    console.error(`Failed to load texture: ${url}`, error);
+                    // Error occurred during texture loading
                     reject(error);
                 }
             );

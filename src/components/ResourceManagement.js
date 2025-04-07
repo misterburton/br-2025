@@ -37,8 +37,8 @@ export class ResourceManager {
         // Find and dispose all image meshes
         const imagesToRemove = [];
         scene.traverse(object => {
-            if (object instanceof THREE.Mesh && 
-                Math.abs(object.position.z - (sheetZPosition + 0.01)) < 0.1 && 
+            if (object instanceof THREE.Mesh &&
+                Math.abs(object.position.z - (sheetZPosition + 0.01)) < 0.1 &&
                 object !== sheet) {
                 imagesToRemove.push(object);
             }
@@ -81,24 +81,19 @@ export function clearExistingImageMeshes(scene, sheet, sheetZPosition) {
         const isNotSheet = object !== sheet;
         
         // Criteria 4: Has a material and texture (likely an image)
-        const hasImageMaterial = object.material && 
-                                (object.material.map || 
+        const hasImageMaterial = object.material &&
+                                (object.material.map ||
                                  (object.material.color && object.material.transparent));
         
         // Remove if it meets criteria that indicate it's an image from any implementation
-        if (isNotSheet && 
-            ((hasSheetImageFlag) || 
-             (isAtImageZPosition && hasImageMaterial))) {
+        if (isNotSheet &&
+            ((hasSheetImageFlag) ||
+            (hasImageMaterial))) {
             meshesToRemove.push(object);
-            
-            // Log found objects for debugging
-            console.log(`Removing mesh: z=${object.position.z.toFixed(2)}, isSheetImage=${hasSheetImageFlag}`);
         }
     });
     
-    console.log(`Found ${meshesToRemove.length} image meshes to remove`);
-    
-    // Properly dispose of all resources to prevent memory leaks
+    // Remove all identified meshes
     meshesToRemove.forEach(mesh => {
         if (mesh.geometry) mesh.geometry.dispose();
         if (mesh.material) {

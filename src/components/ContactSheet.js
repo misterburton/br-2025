@@ -29,6 +29,9 @@ export class ContactSheet {
         this.sheetId = sheetId;
         this.gradientBackground = gradientBackground;
         
+        // Initialize ResourceManager
+        this.resourceManager = new ResourceManager();
+        
         // Create a reusable texture loader
         this.textureLoader = new THREE.TextureLoader();
         
@@ -68,7 +71,6 @@ export class ContactSheet {
         // Initialize helper classes
         this.imageLoader = new ImageLoader();
         this.animation = new SheetAnimation(camera, gradientBackground);
-        this.resourceManager = new ResourceManager();
         this.detailView = new DetailView();
         
         // Sheet Z position constant
@@ -87,14 +89,14 @@ export class ContactSheet {
             this.resetImageBrightness();
             setupSheetInteraction(this);
         } catch (error) {
-            console.error('Failed to initialize contact sheet:', error);
+            // Failed to initialize contact sheet
             throw error;
         }
     }
     
     async setupSheet() {
         try {
-            const sheetTexture = await this.loadTextureWithProperEncoding('images/contact-sheet-placeholder.jpg');
+            const sheetTexture = await this.imageLoader.loadTextureWithProperEncoding('images/contact-sheet-placeholder.jpg');
             
             const dimensions = this.layout.getSheetDimensions();
             const geometry = new THREE.PlaneGeometry(dimensions.width, dimensions.height);
@@ -110,7 +112,7 @@ export class ContactSheet {
             this.scene.add(this.sheet);
             
         } catch (error) {
-            console.error('Failed to setup contact sheet:', error);
+            // Failed to setup contact sheet
             throw error;
         }
     }
@@ -124,7 +126,7 @@ export class ContactSheet {
         }
         this.infoButton = null;
         
-        this.disposeThreeJsObjects();
+        this.resourceManager.disposeThreeJsObjects(this.scene, this.sheet, this.SHEET_Z_POSITION);
         
         if (window.gsap) {
             window.gsap.killTweensOf(this.camera);
@@ -473,38 +475,6 @@ export class ContactSheet {
         });
     }
     
-    // Properly dispose THREE.js objects
-    disposeThreeJsObjects() {
-        // Dispose of sheet mesh
-        if (this.sheet) {
-            if (this.sheet.geometry) this.sheet.geometry.dispose();
-            if (this.sheet.material) {
-                if (this.sheet.material.map) this.sheet.material.map.dispose();
-                this.sheet.material.dispose();
-            }
-            this.scene.remove(this.sheet);
-        }
-        
-        // Find and dispose all image meshes
-        const imagesToRemove = [];
-        this.scene.traverse(object => {
-            if (object instanceof THREE.Mesh && 
-                Math.abs(object.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1 && 
-                object !== this.sheet) {
-                imagesToRemove.push(object);
-            }
-        });
-        
-        imagesToRemove.forEach(mesh => {
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) {
-                if (mesh.material.map) mesh.material.map.dispose();
-                mesh.material.dispose();
-            }
-            this.scene.remove(mesh);
-        });
-    }
-    
     // Maintain backward compatibility
     cleanup() {
         this.dispose();
@@ -726,7 +696,7 @@ export class ContactSheet {
     async createImagesFromSheet() {
         try {
             // Get list of image filenames for the current sheet
-            const imageFiles = await this.getSheetImageFiles();
+            const imageFiles = await this.imageLoader.getSheetImageFiles(this.sheetId);
             
             // Create a reusable geometry for all images
             const imageDimensions = {
@@ -739,7 +709,7 @@ export class ContactSheet {
             this.imageMapping = [];
             
             // Clear existing meshes to prevent overlapping
-            this.clearExistingImageMeshes();
+            clearExistingImageMeshes(this.scene, this.sheet, this.SHEET_Z_POSITION);
             
             // Load and create images in grid
             const loadingPromises = [];
@@ -760,7 +730,7 @@ export class ContactSheet {
                     const texturePath = `images/${this.sheetId}/${filename}`;
                     
                     // Create a promise for loading this image with correct settings
-                    const loadPromise = this.loadTextureWithProperEncoding(texturePath)
+                    const loadPromise = this.imageLoader.loadTextureWithProperEncoding(texturePath)
                         .then(texture => {
                             // Create simple material with no special settings
                             const material = new THREE.MeshBasicMaterial({ 
@@ -788,7 +758,7 @@ export class ContactSheet {
                             successCount++;
                         })
                         .catch(error => {
-                            console.error(`Failed to load image: ${texturePath}`, error);
+                            // Failed to load image, create a fallback
                             errorCount++;
                             
                             // Create a fallback colored material instead
@@ -812,7 +782,6 @@ export class ContactSheet {
             
             // Wait for all images to load
             await Promise.all(loadingPromises);
-            console.log(`Loaded ${successCount} images for sheet "${this.sheetId}" (${errorCount} failed)`);
             
             // If all images failed, throw an error to be caught
             if (successCount === 0 && errorCount > 0) {
@@ -820,7 +789,7 @@ export class ContactSheet {
             }
             
         } catch (error) {
-            console.error('Failed to create images:', error);
+            // Failed to create images
             throw error;
         }
     }
@@ -831,54 +800,6 @@ export class ContactSheet {
         // The programmatically generated placeholder rectangles are no longer used
         // as we're loading actual JPG images instead
         return this.createImagesFromSheet();
-    }
-    
-    // Helper method to get image files for the current sheet
-    async getSheetImageFiles() {
-        // For now, return hardcoded list of files based on sheet ID
-        if (this.sheetId === 'sheet_one') {
-            return [
-                'Admiralteyskaya.jpg',
-                'Andel.jpg',  // Renamed from Andĕl.jpg
-                'Avtovo.jpg',
-                'Bikás park-portrait.jpg',
-                'Bukharestskaya-portrait.jpg',
-                'Florenc.jpg',
-                'Fővám tér.jpg',
-                'II. János Pál pápa tér-portrait.jpg',
-                'Kálvin tér átszállóalagút-1.jpg',
-                'Kálvin tér átszállóalagút-2.jpg',
-                'Kálvin tér M3 átszállóalagút-portrait.jpg',
-                'Kálvin tér M3.jpg',
-                'Kálvin tér M4.jpg',
-                'Karlovo náměstí.jpg',
-                'Keleti pályaudvar.jpg',
-                'Kirovsky Zavod-portrait.jpg',
-                'Komendantsky Prospekt.jpg',
-                'Krestovsky Ostrov.jpg',
-                'Malostranská.jpg',
-                'Mezhdunarodnaya.jpg',
-                'Nagyvárad tér-portrait.jpg',
-                'Národní třída-1.jpg',
-                'Národní třída-2.jpg',
-                'Narvskaya.jpg',
-                'Obvodny Kanal-portrait.jpg',
-                'Rådhuset.jpg',
-                'Staraya Derevnya.jpg',
-                'Staroměstská-1.jpg',
-                'Staroměstská-2.jpg',
-                'Szent Gellért tér-1.jpg',
-                'Szent Gellért tér-2.jpg',
-                'T-Centralen.jpg',
-                'Újbuda-központ-1.jpg',
-                'Ujbuda-kozpont-2.jpg',  // Renamed from Újbuda-központ-2.jpg
-                'Volkovskaya.jpg',
-                'Zvenigorodskaya.jpg'
-            ];
-        }
-        
-        // In a real application, this could fetch from an API or dynamically from the server
-        return [];
     }
     
     isDesktopOrTablet() {
@@ -1005,52 +926,6 @@ export class ContactSheet {
                     });
                 }
             }
-        });
-    }
-    
-    // Clear existing image meshes to prevent overlapping when reloading
-    clearExistingImageMeshes() {
-        // Find and remove all existing image meshes before adding new ones
-        const meshesToRemove = [];
-        
-        this.scene.traverse(object => {
-            if (!(object instanceof THREE.Mesh)) return;
-            
-            // Criteria 1: Has isSheetImage flag (newer implementation)
-            const hasSheetImageFlag = object.userData && object.userData.isSheetImage;
-            
-            // Criteria 2: Is at the expected Z position for images (with some tolerance)
-            const isAtImageZPosition = Math.abs(object.position.z - (this.SHEET_Z_POSITION + 0.01)) < 0.1;
-            
-            // Criteria 3: Is not the main contact sheet background
-            const isNotSheet = object !== this.sheet;
-            
-            // Criteria 4: Has a material and texture (likely an image)
-            const hasImageMaterial = object.material && 
-                                    (object.material.map || 
-                                     (object.material.color && object.material.transparent));
-            
-            // Remove if it meets criteria that indicate it's an image from any implementation
-            if (isNotSheet && 
-                ((hasSheetImageFlag) || 
-                 (isAtImageZPosition && hasImageMaterial))) {
-                meshesToRemove.push(object);
-                
-                // Log found objects for debugging
-                console.log(`Removing mesh: z=${object.position.z.toFixed(2)}, isSheetImage=${hasSheetImageFlag}`);
-            }
-        });
-        
-        console.log(`Found ${meshesToRemove.length} image meshes to remove`);
-        
-        // Properly dispose of all resources to prevent memory leaks
-        meshesToRemove.forEach(mesh => {
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) {
-                if (mesh.material.map) mesh.material.map.dispose();
-                mesh.material.dispose();
-            }
-            this.scene.remove(mesh);
         });
     }
     
@@ -1251,26 +1126,6 @@ export class ContactSheet {
                     this.updateInfoButtonPosition();
                 }
             }
-        });
-    }
-
-    loadTextureWithProperEncoding(url) {
-        return new Promise((resolve, reject) => {
-            this.textureLoader.load(
-                url,
-                (texture) => {
-                    // Use modern colorSpace property instead of encoding
-                    texture.colorSpace = THREE.SRGBColorSpace;
-                    
-                    console.log(`Successfully loaded texture: ${url}`);
-                    resolve(texture);
-                },
-                undefined,
-                (error) => {
-                    console.error(`Failed to load texture: ${url}`, error);
-                    reject(error);
-                }
-            );
         });
     }
 } 
