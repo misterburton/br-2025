@@ -58,7 +58,7 @@ export class SheetAnimation {
     }
     
     // Zoom out to show the entire sheet
-    zoomOut(state, originalFrustum, resetImageBrightness) {
+    zoomOut(state, originalFrustum, resetImageBrightness, onComplete = null) {
         state = SheetState.ANIMATING;
         
         // Reset image brightness as we zoom out
@@ -96,6 +96,11 @@ export class SheetAnimation {
                 originalFrustum.top = halfHeight;
                 originalFrustum.bottom = -halfHeight;
                 state = SheetState.IDLE;
+                
+                // Call the additional callback if provided
+                if (onComplete && typeof onComplete === 'function') {
+                    onComplete();
+                }
             }
         });
         

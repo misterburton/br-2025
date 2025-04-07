@@ -560,12 +560,6 @@ export class ContactSheet {
     
     // Zoom to a specific image
     zoomToImage(imagePos, row, col) {
-        const { size, aspect } = this.calculateZoomFrustum();
-        const halfSize = size / 2;
-        
-        const isSubsequentMovement = this.state === SheetState.ZOOMED_IN;
-        this.state = SheetState.ANIMATING;
-        
         // Hide info button during transition
         if (this.infoButton) {
             this.infoButton.style.opacity = '0';
@@ -574,58 +568,37 @@ export class ContactSheet {
             }, 200);
         }
         
-        // Animate camera frustum
-        gsap.to(this.camera, {
-            left: -halfSize * aspect,
-            right: halfSize * aspect,
-            top: halfSize,
-            bottom: -halfSize,
-            duration: isSubsequentMovement ? 0.3 : 1,
-            ease: isSubsequentMovement ? "power2.inOut" : "power2.inOut",
-            onUpdate: () => {
-                this.camera.updateProjectionMatrix();
+        // Define the callback for when animation is complete
+        const onZoomComplete = () => {
+            this.currentImage = { row, col };
+            this.state = SheetState.ZOOMED_IN;
+            
+            // Show and fade in info button after zoom completes
+            if (this.infoButton) {
+                this.updateInfoButtonPosition();
+                this.infoButton.style.display = 'block';
+                setTimeout(() => {
+                    this.infoButton.style.opacity = '1';
+                }, 50);
             }
-        });
+        };
         
-        // Animate camera position
-        gsap.to(this.camera.position, {
-            x: imagePos.x,
-            y: imagePos.y,
-            duration: isSubsequentMovement ? 0.5 : 1.5,
-            ease: isSubsequentMovement ? "power2.inOut" : "power4.inOut",
-            overwrite: false,
-            onComplete: () => {
-                this.currentImage = { row, col };
-                this.state = SheetState.ZOOMED_IN;
-                
-                // Show and fade in info button after zoom completes
-                if (this.infoButton) {
-                    this.updateInfoButtonPosition();
-                    this.infoButton.style.display = 'block';
-                    setTimeout(() => {
-                        this.infoButton.style.opacity = '1';
-                    }, 50);
-                }
-            }
-        });
+        // Use SheetAnimation to handle the zoom animation
+        this.animation.zoomToImage(
+            imagePos,
+            row,
+            col,
+            this.state,
+            onZoomComplete,
+            () => this.setImageBrightness(row, col)
+        );
         
-        // Animate gradient background with parallax effect
-        if (this.gradientBackground) {
-            const parallaxFactor = 0.15; // Reduced for subtler effect
-            gsap.to(this.gradientBackground.position, {
-                x: imagePos.x * parallaxFactor,
-                y: imagePos.y * parallaxFactor,
-                duration: isSubsequentMovement ? 0.7 : 1.8,
-                ease: isSubsequentMovement ? "power2.inOut" : "power3.inOut",
-                overwrite: false
-            });
-        }
+        // Set the state to animating
+        this.state = SheetState.ANIMATING;
     }
     
     // Zoom out to show the entire sheet
     zoomOut() {
-        this.state = SheetState.ANIMATING;
-        
         // Fade out info button
         if (this.infoButton) {
             this.infoButton.style.opacity = '0';
@@ -634,62 +607,25 @@ export class ContactSheet {
             }, 200);
         }
         
-        // Reset image brightness as we zoom out
-        this.resetImageBrightness();
+        // Define callback for when zoom out is complete
+        const onZoomOutComplete = () => {
+            // Add a small cooldown period after animation completes
+            // to prevent accidental clicks
+            setTimeout(() => {
+                this.state = SheetState.IDLE;
+            }, 150); // 150ms cooldown after animation ends
+        };
         
-        gsap.to(this.camera.position, {
-            x: 0,
-            y: 0,
-            duration: ANIMATION_DURATIONS.ZOOM_OUT_POSITION,
-            ease: "power3.in",
-            overwrite: false
-        });
+        // Use SheetAnimation to handle the zoom out animation
+        this.animation.zoomOut(
+            this.state,
+            this.originalFrustum,
+            () => this.resetImageBrightness(),
+            onZoomOutComplete
+        );
         
-        // Recalculate the correct frustum based on current aspect ratio
-        const aspect = window.innerWidth / window.innerHeight;
-        const frustumSize = aspect > 1 ? 4 : 4 / aspect;
-        const halfHeight = frustumSize / 2;
-        const halfWidth = frustumSize * aspect / 2;
-        
-        gsap.to(this.camera, {
-            left: -halfWidth,
-            right: halfWidth,
-            top: halfHeight,
-            bottom: -halfHeight,
-            duration: ANIMATION_DURATIONS.ZOOM_OUT_FRUSTUM,
-            delay: ANIMATION_DURATIONS.ZOOM_OUT_DELAY,
-            ease: "power3.inOut",
-            onUpdate: () => {
-                this.camera.updateProjectionMatrix();
-            },
-            onComplete: () => {
-                // Update the stored original frustum with the current values
-                this.originalFrustum = {
-                    left: -halfWidth,
-                    right: halfWidth,
-                    top: halfHeight,
-                    bottom: -halfHeight
-                };
-                
-                // Add a small cooldown period after animation completes
-                // to prevent accidental clicks
-                setTimeout(() => {
-                    this.state = SheetState.IDLE;
-                }, 150); // 150ms cooldown after animation ends
-            }
-        });
-        
-        // Reset gradient background position
-        if (this.gradientBackground) {
-            gsap.to(this.gradientBackground.position, {
-                x: 0,
-                y: 0,
-                duration: ANIMATION_DURATIONS.ZOOM_OUT_FRUSTUM * 1.2,
-                delay: ANIMATION_DURATIONS.ZOOM_OUT_DELAY * 0.5,
-                ease: "power2.out",
-                overwrite: false
-            });
-        }
+        // Set the state to animating
+        this.state = SheetState.ANIMATING;
     }
     
     // Create images from sheet

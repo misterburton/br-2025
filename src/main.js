@@ -46,16 +46,6 @@ document.body.style.backgroundColor = '';
 document.body.style.margin = '0';
 document.body.style.overflow = 'hidden';
 
-// Initialize contact sheet
-let contactSheet;
-try {
-    contactSheet = new ContactSheet(scene, camera, 'sheet_one');
-    scene.renderer = renderer;
-    contactSheet.init().catch(console.error);
-} catch (error) {
-    console.error('Error creating contact sheet:', error);
-}
-
 // Helper function to show error messages to the user
 function showErrorMessage(message) {
     const errorContainer = document.createElement('div');
@@ -70,6 +60,17 @@ function showErrorMessage(message) {
     errorContainer.style.zIndex = '9999';
     errorContainer.textContent = message;
     document.body.appendChild(errorContainer);
+}
+
+// Initialize contact sheet
+let contactSheet;
+try {
+    contactSheet = new ContactSheet(scene, camera, 'sheet_one');
+    scene.renderer = renderer;
+    contactSheet.init().catch(console.error);
+} catch (error) {
+    console.error('Error creating contact sheet:', error);
+    showErrorMessage('Failed to initialize contact sheet. Please refresh the page.');
 }
 
 // Optimize resize handler with throttling
@@ -127,8 +128,8 @@ function animate(timestamp) {
 // Start animation loop
 animate();
 
-// Implement proper cleanup for page visibility changes
-document.addEventListener('visibilitychange', () => {
+// Handle visibility changes to pause/resume animations
+function onVisibilityChange() {
     if (document.hidden) {
         // Pause animations when tab is not visible
         cancelAnimationFrame(frameId);
@@ -137,7 +138,10 @@ document.addEventListener('visibilitychange', () => {
         lastFrameTime = performance.now();
         frameId = requestAnimationFrame(animate);
     }
-});
+}
+
+// Add event listeners with proper cleanup
+document.addEventListener('visibilitychange', onVisibilityChange);
 
 // Add proper cleanup on page unload
 window.addEventListener('beforeunload', () => {
@@ -151,18 +155,12 @@ window.addEventListener('beforeunload', () => {
         contactSheet.dispose();
     }
     
+    // Remove event listeners
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('resize', throttledResize);
+    
     // Dispose renderer
     if (renderer) {
         renderer.dispose();
     }
-});
-
-// Reference to the visibility change handler for removal
-function onVisibilityChange() {
-    if (document.hidden) {
-        cancelAnimationFrame(frameId);
-    } else {
-        lastFrameTime = performance.now();
-        frameId = requestAnimationFrame(animate);
-    }
-} 
+}); 
