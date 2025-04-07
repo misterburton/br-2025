@@ -111,6 +111,30 @@ export class DetailView {
 
         // Event handlers
         this.closeButton.addEventListener('click', () => this.hide());
+
+        // Add pinch gesture handler
+        const hammer = new Hammer(this.container);
+        hammer.get('pinch').set({ enable: true });
+        
+        // Prevent Safari's default pinch behavior
+        this.container.style.touchAction = 'none';
+        this.container.style.webkitTouchCallout = 'none';
+        this.container.style.webkitUserSelect = 'none';
+        
+        // Prevent default touch behaviors
+        this.container.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 1) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+        
+        hammer.on('pinchin', (event) => {
+            // Only trigger if the scale is significant enough
+            if (event.scale < 0.8) {
+                event.preventDefault();
+                this.hide();
+            }
+        });
     }
 
     formatTitle(filename) {
@@ -145,7 +169,7 @@ export class DetailView {
         
         // Calculate zoom amounts
         const zoomFactor = window.innerWidth <= 768 ? 1.15 : 1.1;
-        const startScale = window.innerWidth <= 768 ? 2 : 1.8;
+        const startScale = window.innerWidth <= 768 ? 0.5 : 0.6; // Start small and grow
         
         // Initial states
         gsap.set(this.container, { 
@@ -159,10 +183,10 @@ export class DetailView {
         
         // Start camera zoom and detail view scale simultaneously
         tl.to(camera, {
-            left: this.originalSettings.left * zoomFactor,
-            right: this.originalSettings.right * zoomFactor,
-            top: this.originalSettings.top * zoomFactor,
-            bottom: this.originalSettings.bottom * zoomFactor,
+            left: this.originalSettings.left / zoomFactor,
+            right: this.originalSettings.right / zoomFactor,
+            top: this.originalSettings.top / zoomFactor,
+            bottom: this.originalSettings.bottom / zoomFactor,
             duration: 0.65,
             ease: 'power2.inOut',
             onUpdate: () => camera.updateProjectionMatrix()
@@ -192,7 +216,7 @@ export class DetailView {
     }
 
     hide() {
-        const startScale = window.innerWidth <= 768 ? 2 : 1.8;
+        const endScale = window.innerWidth <= 768 ? 0.5 : 0.6; // End small
         
         const tl = gsap.timeline({
             onComplete: () => {
@@ -207,10 +231,10 @@ export class DetailView {
             duration: 0.3,
             ease: 'power2.in'
         })
-        // Scale up detail view while zooming camera back
+        // Scale down detail view while zooming camera back
         .to(this.container, {
             opacity: 0,
-            transform: `scale(${startScale})`,
+            transform: `scale(${endScale})`,
             duration: 0.65,
             ease: 'power2.inOut'
         }, 0)
