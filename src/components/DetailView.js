@@ -1,6 +1,6 @@
 export class DetailView {
     constructor() {
-        // Create container
+        // Create container - make it transparent to allow contact sheet to show through
         this.container = document.createElement('div');
         this.container.style.cssText = `
             position: fixed;
@@ -8,13 +8,13 @@ export class DetailView {
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: black;
             z-index: 1000;
             opacity: 0;
             pointer-events: none;
             transform: scale(1.4);
             transform-origin: center center;
             overscroll-behavior: contain;
+            background-color: transparent;
         `;
         
         // Create background overlay
@@ -25,7 +25,7 @@ export class DetailView {
             left: 0;
             width: 100%;
             height: 100%;
-            background: black;
+            background: rgba(0, 0, 0, 0.7);
             opacity: 0;
         `;
 
@@ -43,7 +43,7 @@ export class DetailView {
             background: rgba(0, 0, 0, 0.5);
             color: white;
             font-size: 24px;
-            font-family: "Source Code Pro", Menlo, Monaco, Consolas, monospace, monospace;
+            font-family: "Helvetica Neue", Arial, sans-serif;
             cursor: pointer;
             z-index: 1002;
             opacity: 0;
@@ -68,6 +68,7 @@ export class DetailView {
             -ms-touch-action: pan-y;
             user-select: none;
             -webkit-user-select: none;
+            background-color: black;
         `;
 
         // Create image
@@ -196,9 +197,11 @@ export class DetailView {
                 this.content.style.maxHeight = '90vh';
                 this.content.style.borderRadius = '8px';
                 this.content.style.overflow = 'hidden auto';
+                this.content.style.boxShadow = '0 0 30px rgba(0, 0, 0, 0.5)';
                 
-                this.background.style.backdropFilter = 'blur(20px)';
-                this.background.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+                // Set semi-transparent background to let contact sheet show through
+                this.background.style.opacity = '1';
+                this.background.style.backgroundColor = 'rgba(0, 0, 0, 0.75)';
             } else if (window.innerWidth >= 1024) {
                 // Desktop/small desktop view (1024px-1439px)
                 const maxContentWidth = Math.min(900, window.innerWidth * 0.7);
@@ -207,9 +210,11 @@ export class DetailView {
                 this.content.style.maxHeight = '90vh';
                 this.content.style.borderRadius = '8px';
                 this.content.style.overflow = 'hidden auto';
+                this.content.style.boxShadow = '0 0 25px rgba(0, 0, 0, 0.5)';
                 
-                this.background.style.backdropFilter = 'blur(20px)';
-                this.background.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+                // Set semi-transparent background to let contact sheet show through
+                this.background.style.opacity = '1';
+                this.background.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
             } else if (window.innerWidth >= 768) {
                 // Tablet view (768px-1023px)
                 const maxContentWidth = Math.min(700, window.innerWidth * 0.8);
@@ -218,9 +223,11 @@ export class DetailView {
                 this.content.style.maxHeight = '90vh';
                 this.content.style.borderRadius = '8px';
                 this.content.style.overflow = 'hidden auto';
+                this.content.style.boxShadow = '0 0 20px rgba(0, 0, 0, 0.5)';
                 
-                this.background.style.backdropFilter = 'blur(15px)';
-                this.background.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+                // Set semi-transparent background to let contact sheet show through
+                this.background.style.opacity = '1';
+                this.background.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
             } else {
                 // Mobile view (<768px)
                 this.content.style.width = '100%';
@@ -228,9 +235,11 @@ export class DetailView {
                 this.content.style.maxHeight = 'none';
                 this.content.style.borderRadius = '0';
                 this.content.style.overflow = 'auto';
+                this.content.style.boxShadow = 'none';
                 
-                this.background.style.backdropFilter = 'none';
-                this.background.style.backgroundColor = 'black';
+                // Set opaque background on mobile - no contact sheet showing
+                this.background.style.opacity = '1';
+                this.background.style.backgroundColor = 'rgba(0, 0, 0, 1)';
             }
         };
     }
