@@ -183,6 +183,56 @@ export class DetailView {
         // Add handlers using stored references
         this.container.addEventListener('touchstart', this.multiTouchHandler, { passive: false });
         this.container.addEventListener('gesturechange', this.gestureHandler, { passive: false });
+        
+        // Create resize handler to adjust view on window resize
+        this.resizeHandler = () => {
+            if (!this.container || this.container.style.display === 'none') return;
+            
+            if (window.innerWidth >= 1440) {
+                // Large desktop view (>= 1440px)
+                const maxContentWidth = Math.min(1000, window.innerWidth * 0.6);
+                this.content.style.width = `${maxContentWidth}px`;
+                this.content.style.margin = '0 auto';
+                this.content.style.maxHeight = '90vh';
+                this.content.style.borderRadius = '8px';
+                this.content.style.overflow = 'hidden auto';
+                
+                this.background.style.backdropFilter = 'blur(20px)';
+                this.background.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+            } else if (window.innerWidth >= 1024) {
+                // Desktop/small desktop view (1024px-1439px)
+                const maxContentWidth = Math.min(900, window.innerWidth * 0.7);
+                this.content.style.width = `${maxContentWidth}px`;
+                this.content.style.margin = '0 auto';
+                this.content.style.maxHeight = '90vh';
+                this.content.style.borderRadius = '8px';
+                this.content.style.overflow = 'hidden auto';
+                
+                this.background.style.backdropFilter = 'blur(20px)';
+                this.background.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+            } else if (window.innerWidth >= 768) {
+                // Tablet view (768px-1023px)
+                const maxContentWidth = Math.min(700, window.innerWidth * 0.8);
+                this.content.style.width = `${maxContentWidth}px`;
+                this.content.style.margin = '0 auto';
+                this.content.style.maxHeight = '90vh';
+                this.content.style.borderRadius = '8px';
+                this.content.style.overflow = 'hidden auto';
+                
+                this.background.style.backdropFilter = 'blur(15px)';
+                this.background.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+            } else {
+                // Mobile view (<768px)
+                this.content.style.width = '100%';
+                this.content.style.margin = '0';
+                this.content.style.maxHeight = 'none';
+                this.content.style.borderRadius = '0';
+                this.content.style.overflow = 'auto';
+                
+                this.background.style.backdropFilter = 'none';
+                this.background.style.backgroundColor = 'black';
+            }
+        };
     }
     
     formatTitle(filename) {
@@ -204,6 +254,12 @@ export class DetailView {
             top: camera.top,
             bottom: camera.bottom
         };
+        
+        // Adjust container width based on screen size - use the shared resize handler
+        this.resizeHandler();
+        
+        // Add resize listener
+        window.addEventListener('resize', this.resizeHandler);
         
         // Update content - use preloaded image if available
         if (imageData.domImage) {
@@ -323,6 +379,7 @@ export class DetailView {
         }, 0);
         
         document.removeEventListener('keydown', this.escHandler);
+        window.removeEventListener('resize', this.resizeHandler);
     }
 
     dispose() {
@@ -346,5 +403,6 @@ export class DetailView {
         }
         
         document.removeEventListener('keydown', this.escHandler);
+        window.removeEventListener('resize', this.resizeHandler);
     }
 }
