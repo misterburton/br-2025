@@ -523,6 +523,11 @@ export class ContactSheet {
         if (this.detailView) {
             this.detailView.dispose();
         }
+        
+        // Clear the texture cache to free memory
+        if (this.imageLoader) {
+            this.imageLoader.clearCache();
+        }
     }
     
     // Split out event listener cleanup for clarity
@@ -698,12 +703,28 @@ export class ContactSheet {
         if (this.state !== SheetState.ZOOMED_IN) return;
 
         const filename = this.imageMapping[this.currentImage.row][this.currentImage.col];
-        const imageData = {
-            filename: filename,
-            url: `images/${this.sheetId}/${filename}`,
-        };
-
-        this.detailView.show(imageData, this.camera, () => {});
+        const imageUrl = `images/${this.sheetId}/${filename}`;
+        
+        // Use the cached DOM image to prevent the loading delay
+        this.imageLoader.getDOMImageFromTexture(imageUrl)
+            .then(img => {
+                const imageData = {
+                    filename: filename,
+                    url: imageUrl,
+                    domImage: img
+                };
+                
+                this.detailView.show(imageData, this.camera, () => {});
+            })
+            .catch(() => {
+                // Fallback to regular loading if cache fails
+                const imageData = {
+                    filename: filename,
+                    url: imageUrl
+                };
+                
+                this.detailView.show(imageData, this.camera, () => {});
+            });
     }
     
     // Maintain backward compatibility

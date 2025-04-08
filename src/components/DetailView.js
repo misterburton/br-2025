@@ -205,8 +205,28 @@ export class DetailView {
             bottom: camera.bottom
         };
         
-        // Update content
-        this.image.src = imageData.url;
+        // Update content - use preloaded image if available
+        if (imageData.domImage) {
+            // Replace the existing image with the preloaded one to avoid loading delay
+            if (this.image.parentNode) {
+                const newImage = imageData.domImage.cloneNode(true);
+                newImage.style.cssText = this.image.style.cssText;
+                this.content.replaceChild(newImage, this.image);
+                this.image = newImage;
+            } else {
+                this.image = imageData.domImage.cloneNode(true);
+                this.image.style.cssText = `
+                    width: 100%;
+                    height: auto;
+                    display: block;
+                `;
+                this.content.prepend(this.image);
+            }
+        } else {
+            // Fallback to standard image loading
+            this.image.src = imageData.url;
+        }
+        
         this.title.textContent = this.formatTitle(imageData.filename);
         
         // Enable interaction

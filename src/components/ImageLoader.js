@@ -3,16 +3,25 @@ import * as THREE from 'three';
 export class ImageLoader {
     constructor() {
         this.textureLoader = new THREE.TextureLoader();
+        this.textureCache = new Map(); // Add a cache for textures
     }
     
     // Helper method to load textures with proper encoding
     loadTextureWithProperEncoding(url) {
+        // Check if the texture is already in the cache
+        if (this.textureCache.has(url)) {
+            return Promise.resolve(this.textureCache.get(url));
+        }
+        
         return new Promise((resolve, reject) => {
             this.textureLoader.load(
                 url,
                 (texture) => {
                     // Use modern colorSpace property instead of encoding
                     texture.colorSpace = THREE.SRGBColorSpace;
+                    
+                    // Store in cache for future use
+                    this.textureCache.set(url, texture);
                     
                     resolve(texture);
                 },
@@ -23,6 +32,47 @@ export class ImageLoader {
                 }
             );
         });
+    }
+    
+    // Get a cached DOM image from a texture URL
+    getDOMImageFromTexture(url) {
+        return new Promise((resolve, reject) => {
+            // Check if we have a cached texture first
+            if (this.textureCache.has(url)) {
+                // Create a new Image element
+                const img = new Image();
+                
+                // When the image is loaded, resolve the promise
+                img.onload = () => resolve(img);
+                img.onerror = (err) => reject(err);
+                
+                // Set the source to the same URL
+                img.src = url;
+            } else {
+                // If we don't have a cached texture, load both the texture and image
+                this.loadTextureWithProperEncoding(url)
+                    .then(() => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.onerror = (err) => reject(err);
+                        img.src = url;
+                    })
+                    .catch(err => reject(err));
+            }
+        });
+    }
+    
+    // Clear the texture cache
+    clearCache() {
+        // Dispose of all textures to free memory
+        this.textureCache.forEach(texture => {
+            if (texture.dispose) {
+                texture.dispose();
+            }
+        });
+        
+        // Clear the cache
+        this.textureCache.clear();
     }
     
     // Get image files for a specific sheet
