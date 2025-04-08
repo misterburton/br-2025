@@ -77,10 +77,6 @@ export class ContactSheet {
         
         // Sheet Z position constant
         this.SHEET_Z_POSITION = -2.5;
-
-        // Info button
-        this.infoButton = null;
-        this.createInfoButton();
     }
     
     // Main initialization method
@@ -122,11 +118,6 @@ export class ContactSheet {
     // Consolidated cleanup/dispose method
     dispose() {
         this.removeEventListeners();
-        
-        if (this.infoButton && this.infoButton.parentNode) {
-            this.infoButton.parentNode.removeChild(this.infoButton);
-        }
-        this.infoButton = null;
         
         this.resourceManager.disposeThreeJsObjects(this.scene, this.sheet, this.SHEET_Z_POSITION);
         
@@ -211,14 +202,6 @@ export class ContactSheet {
         const currentTime = performance.now();
         const deltaTime = currentTime - this.lastTime;
         
-        // Only hide info button if we've moved beyond threshold
-        if (this.hasMovedBeyondThreshold && this.infoButton) {
-            this.infoButton.style.opacity = '0';
-            setTimeout(() => {
-                this.infoButton.style.display = 'none';
-            }, 200);
-        }
-
         this.velocityX = (event.clientX - this.lastX) / deltaTime;
         this.velocityY = (event.clientY - this.lastY) / deltaTime;
         
@@ -267,13 +250,6 @@ export class ContactSheet {
         }
         
         if (!this.hasMovedBeyondThreshold) {
-            if (this.infoButton && this.state === SheetState.ZOOMED_IN) {
-                this.updateInfoButtonPosition();
-                this.infoButton.style.display = 'block';
-                setTimeout(() => {
-                    this.infoButton.style.opacity = '1';
-                }, 50);
-            }
             return;
         }
         
@@ -320,27 +296,21 @@ export class ContactSheet {
                 
                 setTimeout(() => {
                     this.state = SheetState.ZOOMED_IN;
-                    if (this.infoButton) {
-                        this.updateInfoButtonPosition();
-                        this.infoButton.style.display = 'block';
-                        setTimeout(() => {
-                            this.infoButton.style.opacity = '1';
-                        }, 50);
-                    }
                 }, 150);
             }
         });
     }
     
-    // Handle clicking on an adjacent image when zoomed in
+    // Handle clicking on an image when zoomed in
     handleAdjacentImageClick(event) {
         this.updatePointerPosition(event);
         
         const image = this.getImageAtPointer();
         if (!image) return;
         
-        // If clicking the current image, do nothing
+        // If clicking the current image, show detail view
         if (image.row === this.currentImage.row && image.col === this.currentImage.col) {
+            this.showDetailView();
             return;
         }
         
@@ -356,14 +326,6 @@ export class ContactSheet {
             
             this.state = SheetState.ANIMATING;
             
-            // Hide info button before animation only if we're actually navigating
-            if (this.infoButton) {
-                this.infoButton.style.opacity = '0';
-                setTimeout(() => {
-                    this.infoButton.style.display = 'none';
-                }, 200);
-            }
-            
             this.setImageBrightness(image.row, image.col);
             
             gsap.to(this.camera.position, {
@@ -376,73 +338,12 @@ export class ContactSheet {
                     
                     setTimeout(() => {
                         this.state = SheetState.ZOOMED_IN;
-                        if (this.infoButton) {
-                            this.updateInfoButtonPosition();
-                            this.infoButton.style.display = 'block';
-                            setTimeout(() => {
-                                this.infoButton.style.opacity = '1';
-                            }, 50);
-                        }
                     }, 150);
                 }
             });
         }
     }
     
-    createInfoButton() {
-        const button = document.createElement('button');
-        button.innerHTML = 'i';
-        button.style.cssText = `
-            position: fixed;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.8);
-            border: none;
-            color: #000;
-            font-family: serif;
-            font-style: italic;
-            font-size: 20px;
-            cursor: pointer;
-            display: none;
-            z-index: 1000;
-            transition: all 0.2s ease;
-            transform: translate(-50%, -50%);
-        `;
-
-        button.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.showDetailView();
-        });
-
-        document.body.appendChild(button);
-        this.infoButton = button;
-    }
-
-    updateInfoButtonPosition() {
-        if (!this.infoButton || this.state !== SheetState.ZOOMED_IN) return;
-
-        const imagePos = this.layout.getImagePosition(this.currentImage.row, this.currentImage.col);
-        const imageDims = {
-            width: this.layout.imageWidth * this.layout.scale,
-            height: this.layout.imageHeight * this.layout.scale
-        };
-
-        const vector = new THREE.Vector3(
-            imagePos.x + (imageDims.width / 2) - 0.04,
-            imagePos.y - (imageDims.height / 2) + 0.04,
-            this.SHEET_Z_POSITION
-        );
-        vector.project(this.camera);
-
-        const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
-        const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
-
-        this.infoButton.style.left = x + 'px';
-        this.infoButton.style.top = y + 'px';
-    }
-
     showDetailView() {
         if (this.state !== SheetState.ZOOMED_IN) return;
 
@@ -452,21 +353,8 @@ export class ContactSheet {
             url: `images/${this.sheetId}/${filename}`,
         };
 
-        if (this.infoButton) {
-            this.infoButton.style.opacity = '0';
-            setTimeout(() => {
-                this.infoButton.style.display = 'none';
-            }, 200);
-        }
-
         this.detailView.show(imageData, this.camera, () => {
-            if (this.infoButton) {
-                this.updateInfoButtonPosition();
-                this.infoButton.style.display = 'block';
-                setTimeout(() => {
-                    this.infoButton.style.opacity = '1';
-                }, 50);
-            }
+            // No need to do anything on close, as there's no info button anymore
         });
     }
     
@@ -507,11 +395,6 @@ export class ContactSheet {
     // Delegate to the utility function for handleResize
     handleResize() {
         utilsHandleResize(this.camera, this.state, this.originalFrustum, this.calculateZoomFrustum.bind(this));
-        
-        // Update info button position if it's visible
-        if (this.infoButton && this.infoButton.style.display !== 'none') {
-            requestAnimationFrame(() => this.updateInfoButtonPosition());
-        }
     }
     
     // Set image brightness to highlight the active image
@@ -526,27 +409,10 @@ export class ContactSheet {
     
     // Zoom to a specific image
     zoomToImage(imagePos, row, col) {
-        // Hide info button during transition
-        if (this.infoButton) {
-            this.infoButton.style.opacity = '0';
-            setTimeout(() => {
-                this.infoButton.style.display = 'none';
-            }, 200);
-        }
-        
         // Define the callback for when animation is complete
         const onZoomComplete = () => {
             this.currentImage = { row, col };
             this.state = SheetState.ZOOMED_IN;
-            
-            // Show and fade in info button after zoom completes
-            if (this.infoButton) {
-                this.updateInfoButtonPosition();
-                this.infoButton.style.display = 'block';
-                setTimeout(() => {
-                    this.infoButton.style.opacity = '1';
-                }, 50);
-            }
         };
         
         // Use SheetAnimation to handle the zoom animation
@@ -565,14 +431,6 @@ export class ContactSheet {
     
     // Zoom out to show the entire sheet
     zoomOut() {
-        // Fade out info button
-        if (this.infoButton) {
-            this.infoButton.style.opacity = '0';
-            setTimeout(() => {
-                this.infoButton.style.display = 'none';
-            }, 200);
-        }
-        
         // Define callback for when zoom out is complete
         const onZoomOutComplete = () => {
             // Add a small cooldown period after animation completes
