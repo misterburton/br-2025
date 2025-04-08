@@ -77,7 +77,26 @@ function showErrorMessage(message) {
     errorContainer.style.padding = '20px';
     errorContainer.style.borderRadius = '5px';
     errorContainer.style.zIndex = '9999';
+    errorContainer.style.fontFamily = '"Source Code Pro", Menlo, Monaco, Consolas, monospace';
+    errorContainer.style.maxWidth = '80%';
+    errorContainer.style.textAlign = 'center';
     errorContainer.textContent = message;
+    
+    // Add a refresh button
+    const refreshButton = document.createElement('button');
+    refreshButton.textContent = 'Refresh Page';
+    refreshButton.style.marginTop = '15px';
+    refreshButton.style.padding = '8px 16px';
+    refreshButton.style.background = '#ffffff';
+    refreshButton.style.border = 'none';
+    refreshButton.style.borderRadius = '4px';
+    refreshButton.style.cursor = 'pointer';
+    refreshButton.style.fontFamily = '"Source Code Pro", Menlo, Monaco, Consolas, monospace';
+    refreshButton.onclick = () => window.location.reload();
+    
+    errorContainer.appendChild(document.createElement('br'));
+    errorContainer.appendChild(refreshButton);
+    
     document.body.appendChild(errorContainer);
 }
 
@@ -88,11 +107,11 @@ try {
     scene.renderer = renderer;
     contactSheet.init().catch(error => {
         console.error('Error initializing contact sheet:', error);
-        showErrorMessage('Failed to initialize contact sheet. Please refresh the page.');
+        showErrorMessage('Unable to load content. This may be due to a connection issue or browser compatibility problem. Please try again or use a different browser.');
     });
 } catch (error) {
     console.error('Error creating contact sheet:', error);
-    showErrorMessage('Failed to initialize contact sheet. Please refresh the page.');
+    showErrorMessage('Unable to load content. This may be due to a connection issue or browser compatibility problem. Please try again or use a different browser.');
 }
 
 // Optimize resize handler with throttling

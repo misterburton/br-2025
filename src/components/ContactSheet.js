@@ -225,6 +225,7 @@ export class ContactSheet {
             onSwipe: this.handleSwipe.bind(this),
             onTap: this.handleTap.bind(this),
             onPinchStart: this.handlePinchStart.bind(this),
+            onPinchIn: this.handlePinchIn.bind(this),
             onPinchOut: this.handlePinchOut.bind(this),
             onPinchEnd: this.handlePinchEnd.bind(this)
         });
@@ -1003,5 +1004,25 @@ export class ContactSheet {
     
     handlePinchEnd() {
         this.isPinching = false;
+    }
+    
+    // Add pinch-in handler to zoom out
+    handlePinchIn(event) {
+        if (!this.isPinching || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+        
+        // Calculate pinch change relative to initial scale
+        const pinchChange = event.scale / this.initialPinchScale;
+        
+        // Only trigger zoom out if pinch is significant enough
+        if (pinchChange < 0.7) {
+            this.isPinching = false; // Reset to prevent multiple triggers
+            
+            // Ensure any pan operation is completely stopped
+            this.isDragging = false;
+            this.hasMovedBeyondThreshold = false;
+            
+            // Use the same zoom out method that's used elsewhere
+            this.zoomOut();
+        }
     }
 } 

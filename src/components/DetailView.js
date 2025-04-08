@@ -43,6 +43,7 @@ export class DetailView {
             background: rgba(0, 0, 0, 0.5);
             color: white;
             font-size: 24px;
+            font-family: "Source Code Pro", Menlo, Monaco, Consolas, monospace, monospace;
             cursor: pointer;
             z-index: 1002;
             opacity: 0;
@@ -63,6 +64,10 @@ export class DetailView {
             -webkit-overflow-scrolling: touch;
             touch-action: pan-y;
             overscroll-behavior: contain;
+            -webkit-tap-highlight-color: rgba(0,0,0,0);
+            -ms-touch-action: pan-y;
+            user-select: none;
+            -webkit-user-select: none;
         `;
 
         // Create image
@@ -79,6 +84,7 @@ export class DetailView {
             color: white;
             font-size: 24px;
             margin: 20px 20px 10px;
+            font-family: "Source Code Pro", Menlo, Monaco, Consolas, monospace, monospace;
         `;
 
         // Create description
@@ -87,6 +93,7 @@ export class DetailView {
             color: white;
             margin: 0 20px 20px;
             line-height: 1.5;
+            font-family: "Source Code Pro", Menlo, Monaco, Consolas, monospace, monospace;
         `;
         this.description.textContent = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed vitae justo vel metus gravida tincidunt. Nullam eget felis non nunc varius venenatis. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Donec lacinia magna sit amet dolor volutpat, non mollis nulla consequat.';
 
@@ -101,6 +108,7 @@ export class DetailView {
             margin: 0 20px 40px;
             cursor: pointer;
             font-size: 16px;
+            font-family: "Source Code Pro", Menlo, Monaco, Consolas, monospace, monospace;
         `;
 
         // Assemble the DOM
