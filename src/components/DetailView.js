@@ -14,6 +14,7 @@ export class DetailView {
             pointer-events: none;
             transform: scale(1.4);
             transform-origin: center center;
+            overscroll-behavior: contain;
         `;
         
         // Create background overlay
@@ -59,6 +60,9 @@ export class DetailView {
             opacity: 0;
             z-index: 1;
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
+            overscroll-behavior: contain;
         `;
 
         // Create image
@@ -112,29 +116,65 @@ export class DetailView {
         // Event handlers
         this.closeButton.addEventListener('click', () => this.hide());
 
-        // Add pinch gesture handler
-        const hammer = new Hammer(this.container);
-        hammer.get('pinch').set({ enable: true });
+        // Add enhanced pinch gesture handler
+        this.hammer = new Hammer(this.container);
         
-        // Prevent Safari's default pinch behavior
-        this.container.style.touchAction = 'none';
+        // Configure Hammer recognizers for better performance
+        this.hammer.get('pinch').set({
+            enable: true,
+            threshold: 0.1,  // Make it more sensitive to pinch
+            pointers: 2      // Require exactly 2 pointers for pinch
+        });
+        
+        // Prevent Safari default behaviors without breaking scrolling
         this.container.style.webkitTouchCallout = 'none';
         this.container.style.webkitUserSelect = 'none';
+        this.container.style.webkitTapHighlightColor = 'rgba(0,0,0,0)';
         
-        // Prevent default touch behaviors
-        this.container.addEventListener('touchmove', (e) => {
-            if (e.touches.length > 1) {
-                e.preventDefault();
-            }
-        }, { passive: false });
+        // Allow content to scroll vertically
+        this.content.style.touchAction = 'pan-y';
         
-        hammer.on('pinchin', (event) => {
-            // Only trigger if the scale is significant enough
-            if (event.scale < 0.8) {
+        // Listen for pinch gesture with more explicit tracking
+        let initialPinchScale = 1;
+        let isPinching = false;
+        
+        this.hammer.on('pinchstart', (event) => {
+            isPinching = true;
+            initialPinchScale = event.scale;
+        });
+        
+        this.hammer.on('pinchin', (event) => {
+            if (!isPinching) return;
+            
+            // Calculate pinch change relative to initial scale
+            const pinchChange = event.scale / initialPinchScale;
+            
+            // Only trigger if the scale is significantly smaller
+            if (pinchChange < 0.8) {
                 event.preventDefault();
+                isPinching = false;  // Reset to prevent multiple triggers
                 this.hide();
             }
         });
+        
+        this.hammer.on('pinchend', () => {
+            isPinching = false;
+        });
+        
+        // Store instance references to event handlers for proper cleanup
+        this.multiTouchHandler = (e) => {
+            if (e.touches && e.touches.length >= 2) {
+                e.preventDefault();
+            }
+        };
+        
+        this.gestureHandler = (e) => {
+            e.preventDefault();
+        };
+        
+        // Add handlers using stored references
+        this.container.addEventListener('touchstart', this.multiTouchHandler, { passive: false });
+        this.container.addEventListener('gesturechange', this.gestureHandler, { passive: false });
     }
     
     formatTitle(filename) {
@@ -258,9 +298,25 @@ export class DetailView {
     }
 
     dispose() {
-        if (this.container && this.container.parentNode) {
-            this.container.parentNode.removeChild(this.container);
+        // Clean up Hammer instance
+        if (this.hammer) {
+            this.hammer.destroy();
         }
+        
+        // Remove event listeners
+        if (this.container) {
+            this.container.removeEventListener('touchstart', this.multiTouchHandler);
+            this.container.removeEventListener('gesturechange', this.gestureHandler);
+            
+            if (this.container.parentNode) {
+                this.container.parentNode.removeChild(this.container);
+            }
+        }
+        
+        if (this.closeButton && this.closeButton.parentNode) {
+            this.closeButton.parentNode.removeChild(this.closeButton);
+        }
+        
         document.removeEventListener('keydown', this.escHandler);
     }
 }

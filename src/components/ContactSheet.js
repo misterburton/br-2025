@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { GridLayout } from './GridLayout.js';
-import { setupSheetInteraction, SheetState } from './SheetInteraction.js';
+import { SheetState } from './SheetInteraction.js';
 import { ImageLoader } from './ImageLoader.js';
 import { SheetAnimation } from './SheetAnimation.js';
 import { ResourceManager, clearExistingImageMeshes } from './ResourceManagement.js';
+import { GestureManager } from './GestureManager.js';
 import { 
     DOUBLE_TAP_THRESHOLD, 
     SWIPE_VELOCITY_THRESHOLD, 
@@ -66,6 +67,7 @@ export class ContactSheet {
         this.velocityX = 0;
         this.velocityY = 0;
         this.swipeDirection = null;
+        this.hasMovedBeyondThreshold = false;
         
         // Event listeners to be cleaned up
         this.eventListeners = [];
@@ -85,7 +87,8 @@ export class ContactSheet {
             await this.setupSheet();
             await this.createImagesFromSheet();
             this.resetImageBrightness();
-            setupSheetInteraction(this);
+            this.setupGestureManager();
+            this.setupResizeHandling();
         } catch (error) {
             // Failed to initialize contact sheet
             throw error;
@@ -115,9 +118,258 @@ export class ContactSheet {
         }
     }
     
+    setupGestureManager() {
+        const canvas = document.querySelector('canvas');
+        if (!canvas) return;
+        
+        this.gestureManager = new GestureManager(canvas, {
+            onPanStart: this.handlePanStart.bind(this),
+            onPanMove: this.handlePanMove.bind(this),
+            onPanEnd: this.handlePanEnd.bind(this),
+            onSwipe: this.handleSwipe.bind(this),
+            onTap: this.handleTap.bind(this)
+        });
+        
+        // Set cursor styles
+        this.setupCursorStyles(canvas);
+    }
+    
+    setupCursorStyles(canvas) {
+        // Handle cursor style based on hover
+        addEventListenerUtil(canvas, 'mousemove', (event) => {
+            if (this.state === SheetState.ANIMATING) return;
+            
+            this.updatePointerPosition(event);
+            const intersects = this.raycaster.intersectObject(this.sheet);
+            
+            canvas.style.cursor = (intersects.length > 0 && this.isOverImage(intersects[0].uv)) 
+                ? 'pointer' 
+                : 'default';
+        }, this.eventListeners);
+        
+        addEventListenerUtil(canvas, 'mouseleave', () => {
+            canvas.style.cursor = 'default';
+        }, this.eventListeners);
+    }
+    
+    setupResizeHandling() {
+        // Handle resize events for camera adjustment
+        addEventListenerUtil(window, 'resize', () => {
+            this.handleResize();
+        }, this.eventListeners);
+    }
+    
+    handleTap(event) {
+        if (this.state === SheetState.ANIMATING) return;
+        
+        // Convert touch coordinates to Three.js coordinates
+        this.updatePointerFromTouch(event.center);
+        
+        if (this.state === SheetState.IDLE) {
+            // When in idle state, tapping zooms in to an image
+            this.handleInitialZoom(event);
+        } else if (this.state === SheetState.ZOOMED_IN) {
+            // When zoomed in, tap handles image interactions
+            this.handleImageTap(event);
+        }
+    }
+    
+    handlePanStart(event) {
+        if (this.state === SheetState.ANIMATING) return;
+        
+        if (this.state === SheetState.ZOOMED_IN) {
+            this.isDragging = true;
+            this.hasMovedBeyondThreshold = false;
+            this.startX = event.center.x;
+            this.startY = event.center.y;
+            this.lastX = this.startX;
+            this.lastY = this.startY;
+            this.lastTime = performance.now();
+            this.velocityX = 0;
+            this.velocityY = 0;
+            this.swipeDirection = null;
+            
+            const canvas = document.querySelector('canvas');
+            if (canvas) {
+                canvas.style.cursor = 'grabbing';
+            }
+        }
+    }
+    
+    handlePanMove(event) {
+        if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+        
+        // Calculate distance moved to distinguish between click and drag
+        if (!this.hasMovedBeyondThreshold) {
+            const deltaX = Math.abs(event.center.x - this.startX);
+            const deltaY = Math.abs(event.center.y - this.startY);
+            
+            if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+                this.hasMovedBeyondThreshold = true;
+            }
+        }
+        
+        const currentTime = performance.now();
+        const deltaTime = currentTime - this.lastTime;
+        
+        this.velocityX = (event.center.x - this.lastX) / deltaTime;
+        this.velocityY = (event.center.y - this.lastY) / deltaTime;
+        
+        if (!this.swipeDirection) {
+            const deltaX = Math.abs(event.center.x - this.startX);
+            const deltaY = Math.abs(event.center.y - this.startY);
+            this.swipeDirection = deltaX > deltaY ? 'horizontal' : 'vertical';
+        }
+        
+        const scale = (this.camera.top - this.camera.bottom) / window.innerHeight;
+        const deltaX = (event.center.x - this.lastX) * scale;
+        const deltaY = (event.center.y - this.lastY) * scale;
+        
+        if (this.swipeDirection === 'horizontal') {
+            this.camera.position.x -= deltaX;
+            
+            if (this.gradientBackground) {
+                const parallaxFactor = 0.15;
+                this.gradientBackground.position.x -= deltaX * parallaxFactor;
+            }
+        } else {
+            this.camera.position.y += deltaY;
+            
+            if (this.gradientBackground) {
+                const parallaxFactor = 0.15;
+                this.gradientBackground.position.y += deltaY * parallaxFactor;
+            }
+        }
+        
+        this.lastX = event.center.x;
+        this.lastY = event.center.y;
+        this.lastTime = currentTime;
+    }
+    
+    handlePanEnd(event) {
+        if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+        
+        this.isDragging = false;
+        
+        const canvas = document.querySelector('canvas');
+        if (canvas) {
+            this.updatePointerFromTouch(event.center);
+            const intersects = this.raycaster.intersectObject(this.sheet);
+            canvas.style.cursor = (intersects.length > 0 && this.isOverImage(intersects[0].uv)) 
+                ? 'pointer' 
+                : 'default';
+        }
+        
+        if (!this.hasMovedBeyondThreshold) {
+            return;
+        }
+        
+        const totalDeltaX = event.center.x - this.startX;
+        const totalDeltaY = event.center.y - this.startY;
+        
+        let targetImage = { ...this.currentImage };
+        
+        if (this.swipeDirection === 'horizontal') {
+            const shouldMove = Math.abs(this.velocityX) > SWIPE_VELOCITY_THRESHOLD || Math.abs(totalDeltaX) > SWIPE_DISTANCE_THRESHOLD;
+            if (shouldMove) {
+                if (this.velocityX > 0 || totalDeltaX > 0) {
+                    targetImage.col = Math.max(0, this.currentImage.col - 1);
+                } else {
+                    targetImage.col = Math.min(this.layout.columns - 1, this.currentImage.col + 1);
+                }
+            }
+        } else {
+            const shouldMove = Math.abs(this.velocityY) > SWIPE_VELOCITY_THRESHOLD || Math.abs(totalDeltaY) > SWIPE_DISTANCE_THRESHOLD;
+            if (shouldMove) {
+                if (this.velocityY > 0 || totalDeltaY > 0) {
+                    targetImage.row = Math.max(0, this.currentImage.row - 1);
+                } else {
+                    targetImage.row = Math.min(this.layout.rows - 1, this.currentImage.row + 1);
+                }
+            }
+        }
+        
+        this.moveToImage(targetImage);
+    }
+    
+    handleSwipe(event) {
+        // The Pan handlers already handle this behavior more precisely
+    }
+    
+    moveToImage(targetImage) {
+        const imagePos = this.layout.getImagePosition(targetImage.row, targetImage.col);
+        
+        gsap.killTweensOf(this.camera.position);
+        
+        this.state = SheetState.ANIMATING;
+        
+        this.setImageBrightness(targetImage.row, targetImage.col);
+        
+        gsap.to(this.camera.position, {
+            x: imagePos.x,
+            y: imagePos.y,
+            duration: ANIMATION_DURATIONS.SUBSEQUENT_MOVEMENT,
+            ease: "power2.out",
+            onComplete: () => {
+                this.currentImage = targetImage;
+                
+                setTimeout(() => {
+                    this.state = SheetState.ZOOMED_IN;
+                }, 150);
+            }
+        });
+    }
+    
+    // Handle tapping an image when zoomed in
+    handleImageTap(event) {
+        const image = this.getImageAtPointer();
+        if (!image) return;
+        
+        // If tapping the current image, show detail view
+        if (image.row === this.currentImage.row && image.col === this.currentImage.col) {
+            this.showDetailView();
+            return;
+        }
+        
+        // Check if the tapped image is adjacent to the current one
+        const isAdjacent = 
+            (Math.abs(image.row - this.currentImage.row) <= 1 &&
+             Math.abs(image.col - this.currentImage.col) <= 1);
+        
+        if (isAdjacent) {
+            this.moveToImage(image);
+        }
+    }
+    
+    // Update pointer position from a touch event (for Hammer.js)
+    updatePointerFromTouch(touchPoint) {
+        this.pointer.x = (touchPoint.x / window.innerWidth) * 2 - 1;
+        this.pointer.y = -(touchPoint.y / window.innerHeight) * 2 + 1;
+        this.raycaster.setFromCamera(this.pointer, this.camera);
+    }
+    
+    // Handle initial zoom into an image
+    handleInitialZoom(event) {
+        const image = this.getImageAtPointer();
+        if (image) {
+            const imagePos = this.layout.getImagePosition(image.row, image.col);
+            this.zoomToImage(imagePos, image.row, image.col);
+            
+            setTimeout(() => {
+                if (this.state === SheetState.ANIMATING) {
+                    this.setImageBrightness(image.row, image.col);
+                }
+            }, 250);
+        }
+    }
+    
     // Consolidated cleanup/dispose method
     dispose() {
         this.removeEventListeners();
+        
+        if (this.gestureManager) {
+            this.gestureManager.dispose();
+        }
         
         this.resourceManager.disposeThreeJsObjects(this.scene, this.sheet, this.SHEET_Z_POSITION);
         
@@ -176,24 +428,6 @@ export class ContactSheet {
         const canvas = document.querySelector('canvas');
         if (canvas) {
             canvas.style.cursor = 'grabbing';
-        }
-    }
-    
-    // Handle initial zoom into an image
-    handleInitialZoom(event) {
-        event.preventDefault();
-        this.updatePointerPosition(event);
-        
-        const image = this.getImageAtPointer();
-        if (image) {
-            const imagePos = this.layout.getImagePosition(image.row, image.col);
-            this.zoomToImage(imagePos, image.row, image.col);
-            
-            setTimeout(() => {
-                if (this.state === SheetState.ANIMATING) {
-                    this.setImageBrightness(image.row, image.col);
-                }
-            }, 250);
         }
     }
     
@@ -353,9 +587,7 @@ export class ContactSheet {
             url: `images/${this.sheetId}/${filename}`,
         };
 
-        this.detailView.show(imageData, this.camera, () => {
-            // No need to do anything on close, as there's no info button anymore
-        });
+        this.detailView.show(imageData, this.camera, () => {});
     }
     
     // Maintain backward compatibility
@@ -423,29 +655,6 @@ export class ContactSheet {
             this.state,
             onZoomComplete,
             () => this.setImageBrightness(row, col)
-        );
-        
-        // Set the state to animating
-        this.state = SheetState.ANIMATING;
-    }
-    
-    // Zoom out to show the entire sheet
-    zoomOut() {
-        // Define callback for when zoom out is complete
-        const onZoomOutComplete = () => {
-            // Add a small cooldown period after animation completes
-            // to prevent accidental clicks
-            setTimeout(() => {
-                this.state = SheetState.IDLE;
-            }, 150); // 150ms cooldown after animation ends
-        };
-        
-        // Use SheetAnimation to handle the zoom out animation
-        this.animation.zoomOut(
-            this.state,
-            this.originalFrustum,
-            () => this.resetImageBrightness(),
-            onZoomOutComplete
         );
         
         // Set the state to animating
@@ -552,6 +761,29 @@ export class ContactSheet {
             // Failed to create images
             throw error;
         }
+    }
+    
+    // Zoom out to show the entire sheet
+    zoomOut() {
+        // Define callback for when zoom out is complete
+        const onZoomOutComplete = () => {
+            // Add a small cooldown period after animation completes
+            // to prevent accidental clicks
+            setTimeout(() => {
+                this.state = SheetState.IDLE;
+            }, 150); // 150ms cooldown after animation ends
+        };
+        
+        // Use SheetAnimation to handle the zoom out animation
+        this.animation.zoomOut(
+            this.state,
+            this.originalFrustum,
+            () => this.resetImageBrightness(),
+            onZoomOutComplete
+        );
+        
+        // Set the state to animating
+        this.state = SheetState.ANIMATING;
     }
     
     // Keep the old method name for backward compatibility but have it call the new method

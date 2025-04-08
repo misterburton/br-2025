@@ -41,6 +41,25 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 document.body.appendChild(renderer.domElement);
 
+// Configure canvas for proper touch handling
+const canvas = renderer.domElement;
+canvas.style.touchAction = 'none';
+canvas.style.webkitTouchCallout = 'none';
+canvas.style.webkitUserSelect = 'none';
+canvas.style.userSelect = 'none';
+
+// Prevent default touch behaviors, especially iOS double-tap zoom
+canvas.addEventListener('touchstart', preventDefaultTouch, { passive: false });
+canvas.addEventListener('touchmove', preventDefaultTouch, { passive: false });
+canvas.addEventListener('touchend', preventDefaultTouch, { passive: false });
+canvas.addEventListener('gesturestart', preventDefaultTouch, { passive: false });
+canvas.addEventListener('gesturechange', preventDefaultTouch, { passive: false });
+canvas.addEventListener('gestureend', preventDefaultTouch, { passive: false });
+
+function preventDefaultTouch(e) {
+    e.preventDefault();
+}
+
 // Clear inline background styles to ensure CSS is used
 document.body.style.backgroundColor = '';
 document.body.style.margin = '0';
