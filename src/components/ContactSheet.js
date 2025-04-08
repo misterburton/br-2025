@@ -449,14 +449,8 @@ export class ContactSheet {
             return;
         }
         
-        // Check if the tapped image is adjacent to the current one
-        const isAdjacent = 
-            (Math.abs(image.row - this.currentImage.row) <= 1 &&
-             Math.abs(image.col - this.currentImage.col) <= 1);
-        
-        if (isAdjacent) {
-            this.moveToImage(image);
-        }
+        // Allow clicking on any visible image, not just adjacent ones
+        this.moveToImage(image);
     }
     
     // Update pointer position from a touch event (for Hammer.js)
@@ -696,34 +690,8 @@ export class ContactSheet {
             return;
         }
         
-        // Check if the clicked image is adjacent to the current one
-        const isAdjacent = 
-            (Math.abs(image.row - this.currentImage.row) <= 1 &&
-             Math.abs(image.col - this.currentImage.col) <= 1);
-        
-        if (isAdjacent) {
-            const imagePos = this.layout.getImagePosition(image.row, image.col);
-            
-            gsap.killTweensOf(this.camera.position);
-            
-            this.state = SheetState.ANIMATING;
-            
-            this.setImageBrightness(image.row, image.col);
-            
-            gsap.to(this.camera.position, {
-                x: imagePos.x,
-                y: imagePos.y,
-                duration: ANIMATION_DURATIONS.SUBSEQUENT_MOVEMENT,
-                ease: "power2.out",
-                onComplete: () => {
-                    this.currentImage = image;
-                    
-                    setTimeout(() => {
-                        this.state = SheetState.ZOOMED_IN;
-                    }, 150);
-                }
-            });
-        }
+        // Allow clicking on any visible image, not just adjacent ones
+        this.moveToImage(image);
     }
     
     showDetailView() {
