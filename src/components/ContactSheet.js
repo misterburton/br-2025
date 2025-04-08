@@ -79,6 +79,11 @@ export class ContactSheet {
         
         // Sheet Z position constant
         this.SHEET_Z_POSITION = -2.5;
+
+        // Add touch point tracking with robust multi-touch protection
+        this.activeTouchCount = 0;
+        this.lastTouchStartTime = 0;
+        this.multiTouchActive = false;  // Explicit flag for multi-touch state
     }
     
     // Main initialization method
@@ -122,12 +127,106 @@ export class ContactSheet {
         const canvas = document.querySelector('canvas');
         if (!canvas) return;
         
+        // Direct system-level touch monitoring
+        this.touchStartHandler = (e) => {
+            const touchCount = e.touches.length;
+            
+            // If going from single to multi-touch, force cancel any ongoing pan
+            if (touchCount > 1) {
+                // Immediately cancel any drag operation
+                this.isDragging = false;
+                this.hasMovedBeyondThreshold = false;
+                
+                // Clear any pending pan timers
+                if (this.panDelayTimer) {
+                    clearTimeout(this.panDelayTimer);
+                    this.panDelayTimer = null;
+                }
+                
+                // Reset camera position if needed to prevent visual glitches
+                if (this.state === SheetState.ZOOMED_IN && this.currentImage) {
+                    // Force snap back to centered on current image
+                    const imagePos = this.layout.getImagePosition(this.currentImage.row, this.currentImage.col);
+                    gsap.killTweensOf(this.camera.position);
+                    gsap.to(this.camera.position, {
+                        x: imagePos.x,
+                        y: imagePos.y,
+                        duration: 0.1,
+                        ease: "power1.out"
+                    });
+                }
+                
+                // Set explicit flag to block any pan processing
+                this.multiTouchActive = true;
+            } else {
+                this.multiTouchActive = false;
+            }
+            
+            // Update the touch count
+            this.activeTouchCount = touchCount;
+            this.lastTouchStartTime = Date.now();
+        };
+        
+        this.touchMoveHandler = (e) => {
+            // Update touch count on move (catches fingers added during move)
+            const touchCount = e.touches.length;
+            
+            // If multi-touch detected during move, cancel any drag
+            if (touchCount > 1 && !this.multiTouchActive) {
+                this.isDragging = false;
+                this.hasMovedBeyondThreshold = false;
+                this.multiTouchActive = true;
+            }
+            
+            this.activeTouchCount = touchCount;
+        };
+        
+        this.touchEndHandler = (e) => {
+            this.activeTouchCount = e.touches.length;
+            
+            // Reset multi-touch flag only when all fingers are lifted
+            if (e.touches.length === 0) {
+                this.multiTouchActive = false;
+            }
+        };
+        
+        this.touchCancelHandler = (e) => {
+            this.activeTouchCount = e.touches.length;
+            
+            // Reset multi-touch flag only when all fingers are lifted
+            if (e.touches.length === 0) {
+                this.multiTouchActive = false;
+            }
+        };
+        
+        // Add system event listeners with proper cleanup tracking
+        canvas.addEventListener('touchstart', this.touchStartHandler, { passive: false });
+        canvas.addEventListener('touchmove', this.touchMoveHandler, { passive: false });
+        canvas.addEventListener('touchend', this.touchEndHandler, { passive: false });
+        canvas.addEventListener('touchcancel', this.touchCancelHandler, { passive: false });
+        
+        // Add specific handler for Safari's gesturechange event
+        this.gestureChangeHandler = (e) => {
+            // Force cancel any pan operation
+            this.isDragging = false;
+            this.hasMovedBeyondThreshold = false;
+            this.multiTouchActive = true;
+            e.preventDefault();
+        };
+        
+        canvas.addEventListener('gesturestart', this.gestureChangeHandler, { passive: false });
+        canvas.addEventListener('gesturechange', this.gestureChangeHandler, { passive: false });
+        canvas.addEventListener('gestureend', this.gestureChangeHandler, { passive: false });
+        
         this.gestureManager = new GestureManager(canvas, {
             onPanStart: this.handlePanStart.bind(this),
             onPanMove: this.handlePanMove.bind(this),
             onPanEnd: this.handlePanEnd.bind(this),
             onSwipe: this.handleSwipe.bind(this),
-            onTap: this.handleTap.bind(this)
+            onTap: this.handleTap.bind(this),
+            onPinchStart: this.handlePinchStart.bind(this),
+            onPinchOut: this.handlePinchOut.bind(this),
+            onPinchEnd: this.handlePinchEnd.bind(this)
         });
         
         // Set cursor styles
@@ -175,9 +274,13 @@ export class ContactSheet {
     }
     
     handlePanStart(event) {
+        // Immediately block pan if multi-touch is active
+        if (this.activeTouchCount > 1 || this.multiTouchActive) return;
+        
         if (this.state === SheetState.ANIMATING) return;
         
         if (this.state === SheetState.ZOOMED_IN) {
+            // Trigger pan immediately for single touch
             this.isDragging = true;
             this.hasMovedBeyondThreshold = false;
             this.startX = event.center.x;
@@ -197,6 +300,12 @@ export class ContactSheet {
     }
     
     handlePanMove(event) {
+        // Strictly block pan during multi-touch
+        if (this.activeTouchCount > 1 || this.multiTouchActive) {
+            this.isDragging = false;
+            return;
+        }
+        
         if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
         
         // Calculate distance moved to distinguish between click and drag
@@ -247,7 +356,15 @@ export class ContactSheet {
     }
     
     handlePanEnd(event) {
+        // Strictly block pan end during multi-touch
+        if (this.activeTouchCount > 1 || this.multiTouchActive) {
+            this.isDragging = false;
+            return;
+        }
+        
         if (!this.isDragging || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+        
+        if (this.isPinching) return;
         
         this.isDragging = false;
         
@@ -367,8 +484,38 @@ export class ContactSheet {
     dispose() {
         this.removeEventListeners();
         
+        if (this.panDelayTimer) {
+            clearTimeout(this.panDelayTimer);
+            this.panDelayTimer = null;
+        }
+        
         if (this.gestureManager) {
             this.gestureManager.dispose();
+        }
+        
+        // Remove specific gesture event listener
+        const canvas = document.querySelector('canvas');
+        if (canvas) {
+            // Clean up system-level touch handlers
+            if (this.touchStartHandler) {
+                canvas.removeEventListener('touchstart', this.touchStartHandler);
+            }
+            if (this.touchMoveHandler) {
+                canvas.removeEventListener('touchmove', this.touchMoveHandler);
+            }
+            if (this.touchEndHandler) {
+                canvas.removeEventListener('touchend', this.touchEndHandler);
+            }
+            if (this.touchCancelHandler) {
+                canvas.removeEventListener('touchcancel', this.touchCancelHandler);
+            }
+            
+            // Clean up gesture handlers
+            if (this.gestureChangeHandler) {
+                canvas.removeEventListener('gesturestart', this.gestureChangeHandler);
+                canvas.removeEventListener('gesturechange', this.gestureChangeHandler);
+                canvas.removeEventListener('gestureend', this.gestureChangeHandler);
+            }
         }
         
         this.resourceManager.disposeThreeJsObjects(this.scene, this.sheet, this.SHEET_Z_POSITION);
@@ -792,5 +939,69 @@ export class ContactSheet {
         // The programmatically generated placeholder rectangles are no longer used
         // as we're loading actual JPG images instead
         return this.createImagesFromSheet();
+    }
+    
+    // Pinch gesture handlers
+    handlePinchStart(event) {
+        if (this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+        
+        // Direct fix: Force cancel any ongoing pan gesture immediately
+        this.isPinching = true;
+        this.initialPinchScale = event.scale;
+        
+        // Force reset any ongoing drag state
+        if (this.isDragging) {
+            this.isDragging = false;
+            
+            // Reset camera position if it was moved by panning
+            if (this.hasMovedBeyondThreshold) {
+                const imagePos = this.layout.getImagePosition(this.currentImage.row, this.currentImage.col);
+                gsap.killTweensOf(this.camera.position);
+                gsap.to(this.camera.position, {
+                    x: imagePos.x,
+                    y: imagePos.y,
+                    duration: 0.1,
+                    ease: "power1.out"
+                });
+            }
+            
+            // Reset cursor style
+            const canvas = document.querySelector('canvas');
+            if (canvas) {
+                canvas.style.cursor = 'pointer';
+            }
+        }
+        
+        // Update pointer to center of pinch
+        this.updatePointerFromTouch(event.center);
+        
+        // Verify we're over the current active image
+        const image = this.getImageAtPointer();
+        if (!image || image.row !== this.currentImage.row || image.col !== this.currentImage.col) {
+            this.isPinching = false;
+        }
+    }
+    
+    handlePinchOut(event) {
+        if (!this.isPinching || this.state !== SheetState.ZOOMED_IN || this.state === SheetState.ANIMATING) return;
+        
+        // Calculate pinch change relative to initial scale
+        const pinchChange = event.scale / this.initialPinchScale;
+        
+        // Only show detail view if pinch is significant enough
+        if (pinchChange > 1.3) {
+            this.isPinching = false; // Reset to prevent multiple triggers
+            
+            // Ensure any pan operation is completely stopped
+            this.isDragging = false;
+            this.hasMovedBeyondThreshold = false;
+            
+            // Use the exact same method as tap to show detail view
+            this.showDetailView();
+        }
+    }
+    
+    handlePinchEnd() {
+        this.isPinching = false;
     }
 } 

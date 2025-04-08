@@ -14,6 +14,25 @@ export class GestureManager {
         this.hammer.get('pan').set({ direction: Hammer.DIRECTION_ALL });
         this.hammer.get('swipe').set({ direction: Hammer.DIRECTION_ALL });
         
+        // Enable and configure pinch recognizer
+        this.hammer.get('pinch').set({ 
+            enable: true,
+            threshold: 0.1
+        });
+        
+        // Critical fix: Configure recognizer relationships
+        // Make pinch take precedence over pan when pinch is detected
+        const pinch = this.hammer.get('pinch');
+        const pan = this.hammer.get('pan');
+        
+        // Recognize pan with pinch, so they can start together
+        // but pinch will take precedence once it's recognized
+        pinch.recognizeWith(pan);
+        
+        // Make pan require pinch to fail, so pan won't be recognized
+        // during a pinch gesture
+        pan.requireFailure(pinch);
+        
         // Prevent browsers from natively handling these events
         this.disableNativeTouchBehaviors();
         
@@ -24,6 +43,12 @@ export class GestureManager {
         this.hammer.on('swipe', this.handleSwipe.bind(this));
         this.hammer.on('doubletap', this.handleDoubleTap.bind(this));
         this.hammer.on('tap', this.handleTap.bind(this));
+        
+        // Add pinch event listeners
+        this.hammer.on('pinchstart', this.handlePinchStart.bind(this));
+        this.hammer.on('pinchin', this.handlePinchIn.bind(this));
+        this.hammer.on('pinchout', this.handlePinchOut.bind(this));
+        this.hammer.on('pinchend', this.handlePinchEnd.bind(this));
     }
     
     disableNativeTouchBehaviors() {
@@ -81,6 +106,30 @@ export class GestureManager {
     handleTap(event) {
         if (this.callbacks.onTap) {
             this.callbacks.onTap(event);
+        }
+    }
+    
+    handlePinchStart(event) {
+        if (this.callbacks.onPinchStart) {
+            this.callbacks.onPinchStart(event);
+        }
+    }
+    
+    handlePinchIn(event) {
+        if (this.callbacks.onPinchIn) {
+            this.callbacks.onPinchIn(event);
+        }
+    }
+    
+    handlePinchOut(event) {
+        if (this.callbacks.onPinchOut) {
+            this.callbacks.onPinchOut(event);
+        }
+    }
+    
+    handlePinchEnd(event) {
+        if (this.callbacks.onPinchEnd) {
+            this.callbacks.onPinchEnd(event);
         }
     }
     
