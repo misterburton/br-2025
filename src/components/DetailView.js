@@ -15,7 +15,7 @@ export class DetailView {
             transform: scale(1.4);
             transform-origin: center center;
         `;
-
+        
         // Create background overlay
         this.background = document.createElement('div');
         this.background.style.cssText = `
@@ -136,7 +136,7 @@ export class DetailView {
             }
         });
     }
-
+    
     formatTitle(filename) {
         return filename
             .replace(/\.[^/.]+$/, '') // Remove extension
@@ -144,7 +144,7 @@ export class DetailView {
             .replace(/([A-Z])/g, ' $1') // Add space before capitals
             .trim();
     }
-
+    
     show(imageData, camera, onClose) {
         this.onClose = onClose;
         this.camera = camera;
@@ -163,7 +163,7 @@ export class DetailView {
         
         // Enable interaction
         this.container.style.pointerEvents = 'auto';
-
+        
         // Create master timeline
         const tl = gsap.timeline();
         
@@ -172,7 +172,7 @@ export class DetailView {
         const startScale = window.innerWidth <= 768 ? 0.5 : 0.6; // Start small and grow
         
         // Initial states
-        gsap.set(this.container, { 
+        gsap.set(this.container, {
             display: 'block',
             opacity: 0,
             transform: `scale(${startScale})`,

@@ -1,20 +1,15 @@
 import * as THREE from 'three';
-
-// Constants
-const DOUBLE_TAP_THRESHOLD = 300; // ms
-const SWIPE_VELOCITY_THRESHOLD = 0.3;
-const SWIPE_DISTANCE_THRESHOLD = 50; // pixels
-const DRAG_THRESHOLD = 5; // pixels - distance before a click becomes a drag
-const ANIMATION_DURATIONS = {
-    INITIAL_ZOOM: 1,
-    SUBSEQUENT_MOVEMENT: 0.3,
-    ZOOM_OUT_POSITION: 0.57,
-    ZOOM_OUT_FRUSTUM: 0.85,
-    ZOOM_OUT_DELAY: 0.25
-};
+import { 
+    DOUBLE_TAP_THRESHOLD, 
+    SWIPE_VELOCITY_THRESHOLD, 
+    SWIPE_DISTANCE_THRESHOLD, 
+    DRAG_THRESHOLD, 
+    ANIMATION_DURATIONS,
+    addEventListener as addEventListenerUtil
+} from './SheetUtils.js';
 
 // State enum
-const SheetState = {
+export const SheetState = {
     IDLE: 'idle',
     ZOOMED_IN: 'zoomed_in',
     ANIMATING: 'animating'
@@ -28,7 +23,7 @@ export function setupSheetInteraction(sheet) {
     sheet.hasMovedBeyondThreshold = false;
     
     // Handle cursor style based on hover
-    sheet.addEventListener(canvas, 'mousemove', (event) => {
+    addEventListenerUtil(canvas, 'mousemove', (event) => {
         if (sheet.state === SheetState.ANIMATING) return;
         
         sheet.updatePointerPosition(event);
@@ -37,14 +32,14 @@ export function setupSheetInteraction(sheet) {
         canvas.style.cursor = (intersects.length > 0 && sheet.isOverImage(intersects[0].uv)) 
             ? 'pointer' 
             : 'default';
-    });
+    }, sheet.eventListeners);
     
-    sheet.addEventListener(canvas, 'mouseleave', () => {
+    addEventListenerUtil(canvas, 'mouseleave', () => {
         canvas.style.cursor = 'default';
-    });
+    }, sheet.eventListeners);
     
     // Handle pointer down for initial zoom
-    sheet.addEventListener(canvas, 'pointerdown', (event) => {
+    addEventListenerUtil(canvas, 'pointerdown', (event) => {
         if (sheet.state === SheetState.ANIMATING) return;
         
         // Reset move threshold flag on pointer down
@@ -55,10 +50,10 @@ export function setupSheetInteraction(sheet) {
         } else {
             sheet.handleInitialZoom(event);
         }
-    });
+    }, sheet.eventListeners);
     
     // Handle pointer move for dragging
-    sheet.addEventListener(canvas, 'pointermove', (event) => {
+    addEventListenerUtil(canvas, 'pointermove', (event) => {
         if (!sheet.isDragging || sheet.state !== SheetState.ZOOMED_IN || sheet.state === SheetState.ANIMATING) return;
         
         // Calculate distance moved to distinguish between click and drag
@@ -72,10 +67,10 @@ export function setupSheetInteraction(sheet) {
         }
         
         sheet.handleDragging(event);
-    });
+    }, sheet.eventListeners);
     
     // Handle pointer up for drag end or click
-    sheet.addEventListener(canvas, 'pointerup', (event) => {
+    addEventListenerUtil(canvas, 'pointerup', (event) => {
         if (sheet.state !== SheetState.ZOOMED_IN || sheet.state === SheetState.ANIMATING) return;
         
         // Only consider as a drag if we moved beyond threshold
@@ -95,7 +90,7 @@ export function setupSheetInteraction(sheet) {
                 sheet.handleAdjacentImageClick(event);
             }
         }
-    });
+    }, sheet.eventListeners);
     
     // Handle double click/tap to zoom out
     let lastTapTime = 0;
@@ -107,9 +102,9 @@ export function setupSheetInteraction(sheet) {
         sheet.zoomOut();
     };
     
-    sheet.addEventListener(canvas, 'dblclick', handleZoomOut);
+    addEventListenerUtil(canvas, 'dblclick', handleZoomOut, sheet.eventListeners);
     
-    sheet.addEventListener(canvas, 'touchend', (event) => {
+    addEventListenerUtil(canvas, 'touchend', (event) => {
         if (sheet.state !== SheetState.ZOOMED_IN || sheet.state === SheetState.ANIMATING || sheet.isDragging) return;
         
         const currentTime = new Date().getTime();
@@ -122,10 +117,10 @@ export function setupSheetInteraction(sheet) {
         }
         
         lastTapTime = currentTime;
-    });
+    }, sheet.eventListeners);
     
     // Handle resize for zoomed state
-    sheet.addEventListener(window, 'resize', () => {
+    addEventListenerUtil(window, 'resize', () => {
         if (sheet.state === SheetState.ZOOMED_IN) {
             const { size, aspect } = sheet.calculateZoomFrustum();
             const halfSize = size / 2;
@@ -139,8 +134,5 @@ export function setupSheetInteraction(sheet) {
             // If not zoomed in, handle the resize normally
             sheet.handleResize();
         }
-    });
-}
-
-// Export constants for use in other files
-export { DOUBLE_TAP_THRESHOLD, SWIPE_VELOCITY_THRESHOLD, SWIPE_DISTANCE_THRESHOLD, DRAG_THRESHOLD, ANIMATION_DURATIONS, SheetState }; 
+    }, sheet.eventListeners);
+} 

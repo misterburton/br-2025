@@ -1,5 +1,34 @@
 import * as THREE from 'three';
 
+// Constants (centralized here instead of duplicated)
+export const DOUBLE_TAP_THRESHOLD = 300; // ms
+export const SWIPE_VELOCITY_THRESHOLD = 0.3;
+export const SWIPE_DISTANCE_THRESHOLD = 50; // pixels
+export const DRAG_THRESHOLD = 5; // pixels - distance before a click becomes a drag
+export const ANIMATION_DURATIONS = {
+    INITIAL_ZOOM: 1,
+    SUBSEQUENT_MOVEMENT: 0.3,
+    ZOOM_OUT_POSITION: 0.57,
+    ZOOM_OUT_FRUSTUM: 0.85,
+    ZOOM_OUT_DELAY: 0.25
+};
+
+// Event listener management utilities
+export function addEventListener(element, type, handler, eventListeners) {
+    const passiveEvents = ['touchstart', 'touchmove', 'touchend', 'wheel', 'mousewheel'];
+    const options = passiveEvents.includes(type) ? { passive: true } : undefined;
+    
+    element.addEventListener(type, handler, options);
+    eventListeners.push({ element, type, handler });
+}
+
+export function removeEventListeners(eventListeners) {
+    eventListeners.forEach(({ element, type, handler }) => {
+        element.removeEventListener(type, handler);
+    });
+    return [];
+}
+
 // Helper to determine if a given UV coordinate is over an image
 export function isOverImage(uv, layout) {
     if (!uv) return false;
@@ -62,13 +91,38 @@ export function findNearestImage(x, y, layout) {
     return { row: nearestRow, col: nearestCol };
 }
 
-// Simple check for desktop or tablet based on screen size
+// Simple device type detection utilities
 export function isDesktopOrTablet() {
     return window.innerWidth >= 768;
 }
 
+export function isMobile() {
+    return window.innerWidth < 768;
+}
+
+// Calculate zoom frustum for image detail view
+export function calculateZoomFrustum() {
+    // Zoom level multiplier - adjust this value to change how close the camera zooms:
+    // - Higher values (e.g., 0.7, 0.8) will make the image appear smaller (zoomed out)
+    // - Lower values (e.g., 0.3, 0.4) will make the image appear larger (zoomed in)
+    // - Original value was 0.5
+    const zoomMultiplier = 0.7;  // Adjust this value for testing
+    
+    // Calculate target height based on zoom multiplier
+    const targetHeight = window.innerHeight * zoomMultiplier;
+    
+    // Calculate the frustum size needed to achieve this
+    // The image height is 900px, and we want it to be targetHeight pixels tall
+    const frustumSize = (targetHeight / 900) * 2; // *2 because frustum is total height
+    
+    return {
+        size: frustumSize,
+        aspect: window.innerWidth / window.innerHeight
+    };
+}
+
 // Update camera projection matrix on resize
-export function handleResize(camera, state, originalFrustum, calculateZoomFrustum) {
+export function handleResize(camera, state, originalFrustum) {
     // Always recalculate the correct frustum based on current aspect ratio
     const aspect = window.innerWidth / window.innerHeight;
     const frustumSize = aspect > 1 ? 4 : 4 / aspect;

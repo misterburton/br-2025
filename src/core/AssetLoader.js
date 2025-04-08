@@ -20,7 +20,11 @@ export class AssetLoader {
         };
         
         this.loadingManager.onError = (url) => {
-            console.error('Error loading', url);
+            console.error('Error loading asset:', { url, message: 'Failed to load resource' });
+            // Dispatch an event that can be handled by error UI
+            document.dispatchEvent(new CustomEvent('asset-load-error', { 
+                detail: { url, message: 'Failed to load resource' }
+            }));
         };
     }
     

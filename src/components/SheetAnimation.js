@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { SheetState, ANIMATION_DURATIONS } from './SheetInteraction.js';
+import { SheetState } from './SheetInteraction.js';
+import { ANIMATION_DURATIONS, calculateZoomFrustum } from './SheetUtils.js';
 
 export class SheetAnimation {
     constructor(camera, gradientBackground) {
@@ -9,7 +10,7 @@ export class SheetAnimation {
     
     // Zoom to a specific image
     zoomToImage(imagePos, row, col, state, setCurrentImage, setImageBrightness) {
-        const { size, aspect } = this.calculateZoomFrustum();
+        const { size, aspect } = calculateZoomFrustum();
         const halfSize = size / 2;
         
         const isSubsequentMovement = state === SheetState.ZOOMED_IN;
@@ -137,21 +138,6 @@ export class SheetAnimation {
         });
     }
     
-    // Helper method to calculate the zoom frustum
-    calculateZoomFrustum() {
-        // We want the image to take up 50% of the viewport height
-        const targetHeight = window.innerHeight * 0.5;
-        
-        // Calculate the frustum size needed to achieve this
-        // The image height is 900px, and we want it to be targetHeight pixels tall
-        const frustumSize = (targetHeight / 900) * 2; // *2 because frustum is total height
-        
-        return {
-            size: frustumSize,
-            aspect: window.innerWidth / window.innerHeight
-        };
-    }
-    
     // Set image brightness to highlight the active image
     setImageBrightness(scene, activeRow, activeCol) {
         // Find all sheet image meshes in the scene
@@ -200,7 +186,7 @@ export class SheetAnimation {
                         r: 1.0,
                         g: 1.0,
                         b: 1.0,
-                        duration: 0.3
+                        duration: 0.35
                     });
                 }
             }

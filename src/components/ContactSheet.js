@@ -4,21 +4,23 @@ import { setupSheetInteraction, SheetState } from './SheetInteraction.js';
 import { ImageLoader } from './ImageLoader.js';
 import { SheetAnimation } from './SheetAnimation.js';
 import { ResourceManager, clearExistingImageMeshes } from './ResourceManagement.js';
-import * as SheetUtils from './SheetUtils.js';
+import { 
+    DOUBLE_TAP_THRESHOLD, 
+    SWIPE_VELOCITY_THRESHOLD, 
+    SWIPE_DISTANCE_THRESHOLD, 
+    DRAG_THRESHOLD, 
+    ANIMATION_DURATIONS,
+    isOverImage,
+    calculateBounds,
+    findNearestImage,
+    isDesktopOrTablet,
+    isMobile,
+    calculateZoomFrustum,
+    handleResize as utilsHandleResize,
+    addEventListener as addEventListenerUtil,
+    removeEventListeners as removeEventListenersUtil
+} from './SheetUtils.js';
 import { DetailView } from './DetailView.js';
-
-// Constants
-const DOUBLE_TAP_THRESHOLD = 300; // ms
-const SWIPE_VELOCITY_THRESHOLD = 0.3;
-const SWIPE_DISTANCE_THRESHOLD = 50; // pixels
-const DRAG_THRESHOLD = 5; // pixels - distance before a click becomes a drag
-const ANIMATION_DURATIONS = {
-    INITIAL_ZOOM: 1,
-    SUBSEQUENT_MOVEMENT: 0.3,
-    ZOOM_OUT_POSITION: 0.57,
-    ZOOM_OUT_FRUSTUM: 0.85,
-    ZOOM_OUT_DELAY: 0.25
-};
 
 export class ContactSheet {
     constructor(scene, camera, sheetId = 'sheet_one', gradientBackground = null) {
@@ -140,19 +142,12 @@ export class ContactSheet {
     
     // Split out event listener cleanup for clarity
     removeEventListeners() {
-        this.eventListeners.forEach(({ element, type, handler }) => {
-            element.removeEventListener(type, handler);
-        });
-        this.eventListeners = [];
+        this.eventListeners = removeEventListenersUtil(this.eventListeners);
     }
     
     // Add passive option for touch and wheel events
     addEventListener(element, type, handler) {
-        const passiveEvents = ['touchstart', 'touchmove', 'touchend', 'wheel', 'mousewheel'];
-        const options = passiveEvents.includes(type) ? { passive: true } : undefined;
-        
-        element.addEventListener(type, handler, options);
-        this.eventListeners.push({ element, type, handler });
+        addEventListenerUtil(element, type, handler, this.eventListeners);
     }
     
     updatePointerPosition(event) {
@@ -480,82 +475,53 @@ export class ContactSheet {
         this.dispose();
     }
     
+    // Use the utility function for isOverImage
     isOverImage(uv) {
-        if (!uv) return false;
-        
-        const gridX = Math.floor((uv.x * this.layout.sheetWidth - this.layout.firstImageX) / (this.layout.imageWidth + this.layout.horizontalMargin));
-        const gridY = Math.floor(((1 - uv.y) * this.layout.sheetHeight - this.layout.firstImageY) / (this.layout.imageHeight + this.layout.verticalMargin));
-        
-        if (gridX < 0 || gridX >= this.layout.columns || gridY < 0 || gridY >= this.layout.rows) {
-            return false;
-        }
-        
-        const imageX = this.layout.firstImageX + (gridX * (this.layout.imageWidth + this.layout.horizontalMargin));
-        const imageY = this.layout.firstImageY + (gridY * (this.layout.imageHeight + this.layout.verticalMargin));
-        
-        const pixelX = uv.x * this.layout.sheetWidth;
-        const pixelY = (1 - uv.y) * this.layout.sheetHeight;
-        
-        return pixelX >= imageX && 
-               pixelX <= imageX + this.layout.imageWidth &&
-               pixelY >= imageY && 
-               pixelY <= imageY + this.layout.imageHeight;
+        return isOverImage(uv, this.layout);
     }
     
+    // Use the utility function for calculateZoomFrustum
     calculateZoomFrustum() {
-        // Adjust target height based on device type for optimal viewing
-        // IMPORTANT: For the orthographic camera, a SMALLER frustum size means MORE zoom
-        // For desktop: we want MORE zoom (= smaller frustum)
-        // For mobile: we want LESS zoom (= larger frustum)
-        const targetHeightPercentage = this.isMobile() ? 0.65 : 0.35; 
-        const targetHeight = window.innerHeight * targetHeightPercentage;
-        
-        // Calculate the frustum size needed to achieve this
-        const frustumSize = (targetHeight / 900) * 2; // *2 because frustum is total height
-        
-        return {
-            size: frustumSize,
-            aspect: window.innerWidth / window.innerHeight
-        };
+        return calculateZoomFrustum();
     }
     
+    // Use the utility function for calculateBounds
     calculateBounds() {
-        const imageDims = this.layout.getImageDimensions();
-        const halfWidth = imageDims.width / 2;
-        const halfHeight = imageDims.height / 2;
-        
-        return {
-            left: -halfWidth * (this.layout.columns - 1),
-            right: halfWidth * (this.layout.columns - 1),
-            top: halfHeight * (this.layout.rows - 1),
-            bottom: -halfHeight * (this.layout.rows - 1)
-        };
+        return calculateBounds(this.layout);
     }
     
+    // Use the utility function for findNearestImage
     findNearestImage(x, y) {
-        let minDist = Infinity;
-        let nearestPos = null;
-        let nearestRow = 0;
-        let nearestCol = 0;
+        return findNearestImage(x, y, this.layout);
+    }
+    
+    // Delegate to the utility functions for device detection
+    isDesktopOrTablet() {
+        return isDesktopOrTablet();
+    }
+    
+    isMobile() {
+        return isMobile();
+    }
+    
+    // Delegate to the utility function for handleResize
+    handleResize() {
+        utilsHandleResize(this.camera, this.state, this.originalFrustum, this.calculateZoomFrustum.bind(this));
         
-        for (let row = 0; row < this.layout.rows; row++) {
-            for (let col = 0; col < this.layout.columns; col++) {
-                const pos = this.layout.getImagePosition(row, col);
-                const dist = Math.sqrt(
-                    Math.pow(x - pos.x, 2) +
-                    Math.pow(y - pos.y, 2)
-                );
-                
-                if (dist < minDist) {
-                    minDist = dist;
-                    nearestPos = pos;
-                    nearestRow = row;
-                    nearestCol = col;
-                }
-            }
+        // Update info button position if it's visible
+        if (this.infoButton && this.infoButton.style.display !== 'none') {
+            requestAnimationFrame(() => this.updateInfoButtonPosition());
         }
-        
-        return { row: nearestRow, col: nearestCol };
+    }
+    
+    // Set image brightness to highlight the active image
+    setImageBrightness(activeRow, activeCol) {
+        this.animation.setImageBrightness(this.scene, activeRow, activeCol);
+    }
+    
+    // Restore all images to full brightness
+    resetImageBrightness() {
+        this.animation.resetImageBrightness(this.scene);
     }
     
     // Zoom to a specific image
@@ -736,332 +702,5 @@ export class ContactSheet {
         // The programmatically generated placeholder rectangles are no longer used
         // as we're loading actual JPG images instead
         return this.createImagesFromSheet();
-    }
-    
-    isDesktopOrTablet() {
-        // Simple check for desktop or tablet based on screen size
-        // Updated to be consistent with our zoom calculations
-        return window.innerWidth >= 768;
-    }
-    
-    isMobile() {
-        // Simple check for mobile devices based on screen size
-        return window.innerWidth < 768;
-    }
-    
-    // Update camera frustum on window resize
-    handleResize() {
-        // Always recalculate the correct frustum based on current aspect ratio
-        const aspect = window.innerWidth / window.innerHeight;
-        const frustumSize = aspect > 1 ? 4 : 4 / aspect;
-        const halfHeight = frustumSize / 2;
-        const halfWidth = frustumSize * aspect / 2;
-        
-        // If we're not zoomed in, update the camera immediately
-        if (this.state !== SheetState.ZOOMED_IN) {
-            this.camera.left = -halfWidth;
-            this.camera.right = halfWidth;
-            this.camera.top = halfHeight;
-            this.camera.bottom = -halfHeight;
-            this.camera.updateProjectionMatrix();
-            
-            // Update the stored original frustum
-            this.originalFrustum = {
-                left: -halfWidth,
-                right: halfWidth,
-                top: halfHeight,
-                bottom: -halfHeight
-            };
-        } else {
-            // If zoomed in, we should maintain the zoom level but adjust for the new aspect ratio
-            const { size, aspect: newAspect } = this.calculateZoomFrustum();
-            const halfSize = size / 2;
-            
-            this.camera.left = -halfSize * newAspect;
-            this.camera.right = halfSize * newAspect;
-            this.camera.top = halfSize;
-            this.camera.bottom = -halfSize;
-            this.camera.updateProjectionMatrix();
-            
-            // Still update the original frustum for when we zoom out
-            this.originalFrustum = {
-                left: -halfWidth,
-                right: halfWidth,
-                top: halfHeight,
-                bottom: -halfHeight
-            };
-
-            // Update info button position if it's visible
-            if (this.infoButton && this.infoButton.style.display !== 'none') {
-                requestAnimationFrame(() => this.updateInfoButtonPosition());
-            }
-        }
-    }
-    
-    // Set image brightness to highlight the active image
-    setImageBrightness(activeRow, activeCol) {
-        // Use consistent timing with position animations
-        const transitionDuration = this.state === SheetState.ANIMATING ? 
-            ANIMATION_DURATIONS.SUBSEQUENT_MOVEMENT * 0.85 : 0.4;
-        
-        // Find all sheet image meshes in the scene
-        this.scene.traverse(object => {
-            if (object instanceof THREE.Mesh && 
-                object.userData && 
-                object.userData.isSheetImage) {
-                
-                const { row, col } = object.userData;
-                
-                if (object.material) {
-                    // For the active image, ensure full brightness
-                    if (row === activeRow && col === activeCol) {
-                        // Active image - fade to full brightness
-                        gsap.to(object.material.color, {
-                            r: 1.0,
-                            g: 1.0,
-                            b: 1.0,
-                            duration: transitionDuration,
-                            ease: "power2.inOut" // Smoother in-out easing
-                        });
-                    } else {
-                        // Inactive image - fade to darker state
-                        gsap.to(object.material.color, {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.1,
-                            duration: transitionDuration,
-                            ease: "power2.inOut" // Smoother in-out easing
-                        });
-                    }
-                }
-            }
-        });
-    }
-    
-    // Restore all images to full brightness
-    resetImageBrightness() {
-        // First, kill any in-progress color animations to prevent conflicts
-        gsap.killTweensOf(this.scene.children.filter(obj => 
-            obj instanceof THREE.Mesh && obj.userData && obj.userData.isSheetImage
-        ).map(obj => obj.material?.color));
-        
-        // Then animate all images to full brightness
-        this.scene.traverse(object => {
-            if (object instanceof THREE.Mesh && 
-                object.userData && 
-                object.userData.isSheetImage) {
-                
-                if (object.material) {
-                    // Animate to full brightness with a smooth transition
-                    gsap.to(object.material.color, {
-                        r: 1.0,
-                        g: 1.0,
-                        b: 1.0,
-                        duration: ANIMATION_DURATIONS.ZOOM_OUT_POSITION,
-                        ease: "power2.inOut"
-                    });
-                }
-            }
-        });
-    }
-    
-    setupInteraction() {
-        const canvas = document.querySelector('canvas');
-        if (!canvas) return;
-        
-        // Add click flag to track if we've dragged past threshold
-        this.hasMovedBeyondThreshold = false;
-        
-        // Handle cursor style based on hover
-        this.addEventListener(canvas, 'mousemove', (event) => {
-            if (this.state === SheetState.ANIMATING) return;
-            
-            this.updatePointerPosition(event);
-            const intersects = this.raycaster.intersectObject(this.sheet);
-            
-            canvas.style.cursor = (intersects.length > 0 && this.isOverImage(intersects[0].uv)) 
-                ? 'pointer' 
-                : 'default';
-        });
-        
-        this.addEventListener(canvas, 'mouseleave', () => {
-            canvas.style.cursor = 'default';
-        });
-        
-        // Handle pointer down for initial zoom - prevent when animating
-        this.addEventListener(canvas, 'pointerdown', (event) => {
-            if (this.state === SheetState.ANIMATING) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-            }
-            
-            // Reset move threshold flag on pointer down
-            this.hasMovedBeyondThreshold = false;
-            
-            if (this.state === SheetState.ZOOMED_IN) {
-                this.startDragging(event);
-            } else {
-                this.handleInitialZoom(event);
-            }
-        });
-        
-        // Handle pointer move for dragging - prevent when animating
-        this.addEventListener(canvas, 'pointermove', (event) => {
-            if (this.state === SheetState.ANIMATING) return;
-            
-            if (!this.isDragging || this.state !== SheetState.ZOOMED_IN) return;
-            
-            // Calculate distance moved to distinguish between click and drag
-            if (!this.hasMovedBeyondThreshold) {
-                const deltaX = Math.abs(event.clientX - this.startX);
-                const deltaY = Math.abs(event.clientY - this.startY);
-                
-                if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
-                    this.hasMovedBeyondThreshold = true;
-                }
-            }
-            
-            this.handleDragging(event);
-        });
-        
-        // Handle pointer up for drag end or click - prevent when animating
-        this.addEventListener(canvas, 'pointerup', (event) => {
-            if (this.state === SheetState.ANIMATING) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-            }
-            
-            if (this.state !== SheetState.ZOOMED_IN) return;
-            
-            // Only consider as a drag if we moved beyond threshold
-            if (this.isDragging) {
-                if (this.hasMovedBeyondThreshold) {
-                    this.handleDragEnd(event);
-                } else {
-                    // If we didn't move beyond threshold, treat as a click instead
-                    this.isDragging = false;
-                    
-                    // Reset cursor
-                    if (canvas) {
-                        canvas.style.cursor = 'default';
-                    }
-                    
-                    // Handle as a click regardless of device type
-                    this.handleAdjacentImageClick(event);
-                }
-            }
-        });
-        
-        // Update the click handler to work on all devices - prevent when animating
-        this.addEventListener(canvas, 'click', (event) => {
-            if (this.state === SheetState.ANIMATING) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-            }
-            
-            if (this.state !== SheetState.ZOOMED_IN || this.hasMovedBeyondThreshold) return;
-            
-            // Prevent default behavior and stop propagation to avoid double processing
-            event.preventDefault();
-            event.stopPropagation();
-            
-            // Handle clicks regardless of device type
-            this.handleAdjacentImageClick(event);
-        });
-        
-        // Handle double click/tap to zoom out - prevent when animating
-        let lastTapTime = 0;
-        let tapTimeout;
-        
-        const handleZoomOut = (event) => {
-            if (this.state === SheetState.ANIMATING || this.state !== SheetState.ZOOMED_IN || this.isDragging) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-            }
-            event.preventDefault();
-            this.zoomOut();
-        };
-        
-        this.addEventListener(canvas, 'dblclick', handleZoomOut);
-        
-        this.addEventListener(canvas, 'touchend', (event) => {
-            if (this.state === SheetState.ANIMATING) {
-                event.preventDefault();
-                return;
-            }
-            
-            if (this.state !== SheetState.ZOOMED_IN || this.isDragging) return;
-            
-            const currentTime = new Date().getTime();
-            const tapLength = currentTime - lastTapTime;
-            
-            clearTimeout(tapTimeout);
-            
-            if (tapLength < DOUBLE_TAP_THRESHOLD && tapLength > 0) {
-                handleZoomOut(event);
-            }
-            
-            lastTapTime = currentTime;
-        });
-        
-        // Single tap handler for mobile navigation - prevent when animating
-        let singleTapTimer = null;
-        this.addEventListener(canvas, 'touchend', (event) => {
-            if (this.state === SheetState.ANIMATING) {
-                event.preventDefault();
-                if (singleTapTimer) {
-                    clearTimeout(singleTapTimer);
-                    singleTapTimer = null;
-                }
-                return;
-            }
-            
-            if (this.state !== SheetState.ZOOMED_IN || this.hasMovedBeyondThreshold || this.isDragging) return;
-                
-            // Get touch position
-            if (event.changedTouches && event.changedTouches.length > 0) {
-                const touch = event.changedTouches[0];
-                
-                // Convert touch position to pointer position for raycasting
-                this.pointer.x = (touch.clientX / window.innerWidth) * 2 - 1;
-                this.pointer.y = -(touch.clientY / window.innerHeight) * 2 + 1;
-                this.raycaster.setFromCamera(this.pointer, this.camera);
-                
-                // Delay handling the tap to allow for potential double tap
-                clearTimeout(singleTapTimer);
-                singleTapTimer = setTimeout(() => {
-                    // If sufficient time has passed and we haven't detected a double tap
-                    // AND we're still not animating
-                    if (new Date().getTime() - lastTapTime > DOUBLE_TAP_THRESHOLD && 
-                        this.state !== SheetState.ANIMATING) {
-                        this.handleAdjacentImageClick(touch); // Pass the touch as event
-                    }
-                }, DOUBLE_TAP_THRESHOLD + 50); // Wait a bit longer than double tap threshold
-            }
-        });
-        
-        // Handle resize for zoomed state
-        this.addEventListener(window, 'resize', () => {
-            // Allow resize events even during animation
-            if (this.state === SheetState.ZOOMED_IN) {
-                const { size, aspect } = this.calculateZoomFrustum();
-                const halfSize = size / 2;
-                
-                this.camera.left = -halfSize * aspect;
-                this.camera.right = halfSize * aspect;
-                this.camera.top = halfSize;
-                this.camera.bottom = -halfSize;
-                this.camera.updateProjectionMatrix();
-
-                // Update info button position after camera update
-                if (this.infoButton) {
-                    this.updateInfoButtonPosition();
-                }
-            }
-        });
     }
 } 

@@ -67,7 +67,10 @@ let contactSheet;
 try {
     contactSheet = new ContactSheet(scene, camera, 'sheet_one');
     scene.renderer = renderer;
-    contactSheet.init().catch(console.error);
+    contactSheet.init().catch(error => {
+        console.error('Error initializing contact sheet:', error);
+        showErrorMessage('Failed to initialize contact sheet. Please refresh the page.');
+    });
 } catch (error) {
     console.error('Error creating contact sheet:', error);
     showErrorMessage('Failed to initialize contact sheet. Please refresh the page.');

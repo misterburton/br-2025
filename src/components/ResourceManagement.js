@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { 
+    addEventListener as addEventListenerUtil, 
+    removeEventListeners as removeEventListenersUtil 
+} from './SheetUtils.js';
 
 export class ResourceManager {
     constructor() {
@@ -7,19 +11,12 @@ export class ResourceManager {
     
     // Add passive option for touch and wheel events
     addEventListener(element, type, handler) {
-        const passiveEvents = ['touchstart', 'touchmove', 'touchend', 'wheel', 'mousewheel'];
-        const options = passiveEvents.includes(type) ? { passive: true } : undefined;
-        
-        element.addEventListener(type, handler, options);
-        this.eventListeners.push({ element, type, handler });
+        addEventListenerUtil(element, type, handler, this.eventListeners);
     }
     
     // Remove all event listeners
     removeEventListeners() {
-        this.eventListeners.forEach(({ element, type, handler }) => {
-            element.removeEventListener(type, handler);
-        });
-        this.eventListeners = [];
+        this.eventListeners = removeEventListenersUtil(this.eventListeners);
     }
     
     // Dispose THREE.js objects
