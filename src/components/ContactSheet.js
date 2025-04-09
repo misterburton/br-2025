@@ -705,25 +705,25 @@ export class ContactSheet {
         const filename = this.imageMapping[this.currentImage.row][this.currentImage.col];
         const imageUrl = `images/${this.sheetId}/${filename}`;
         
-        // Use the cached DOM image to prevent the loading delay
+        // Create basic image data first - don't wait for cached image to show UI
+        const imageData = {
+            filename: filename,
+            url: imageUrl
+        };
+        
+        // Show the detail view immediately
+        this.detailView.show(imageData, this.camera, () => {});
+        
+        // Then attempt to load the cached version and update if available
         this.imageLoader.getDOMImageFromTexture(imageUrl)
             .then(img => {
-                const imageData = {
-                    filename: filename,
-                    url: imageUrl,
-                    domImage: img
-                };
-                
-                this.detailView.show(imageData, this.camera, () => {});
+                // Update the image if detail view is still open
+                if (this.detailView.isVisible) {
+                    this.detailView.updateImage(img);
+                }
             })
             .catch(() => {
-                // Fallback to regular loading if cache fails
-                const imageData = {
-                    filename: filename,
-                    url: imageUrl
-                };
-                
-                this.detailView.show(imageData, this.camera, () => {});
+                // Do nothing on failure - the regular image is already showing
             });
     }
     

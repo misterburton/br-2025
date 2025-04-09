@@ -17,6 +17,9 @@ export class DetailView {
             background-color: transparent;
         `;
         
+        // Track visibility state
+        this.isVisible = false;
+
         // Create background overlay
         this.background = document.createElement('div');
         this.background.style.cssText = `
@@ -255,6 +258,7 @@ export class DetailView {
     show(imageData, camera, onClose) {
         this.onClose = onClose;
         this.camera = camera;
+        this.isVisible = true;
         
         // Store original camera settings
         this.originalSettings = {
@@ -348,7 +352,19 @@ export class DetailView {
         document.addEventListener('keydown', this.escHandler);
     }
 
+    // Update image without restarting the animation
+    updateImage(newImage) {
+        if (!this.isVisible || !this.image || !this.image.parentNode) return;
+        
+        const newImageElement = newImage.cloneNode(true);
+        newImageElement.style.cssText = this.image.style.cssText;
+        this.content.replaceChild(newImageElement, this.image);
+        this.image = newImageElement;
+    }
+
     hide() {
+        this.isVisible = false;
+        
         const endScale = window.innerWidth <= 768 ? 0.5 : 0.6; // End small
         
         const tl = gsap.timeline({
@@ -392,6 +408,8 @@ export class DetailView {
     }
 
     dispose() {
+        this.isVisible = false;
+        
         // Clean up Hammer instance
         if (this.hammer) {
             this.hammer.destroy();
